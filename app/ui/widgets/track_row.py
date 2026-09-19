@@ -135,16 +135,15 @@ class TrackRow(ctk.CTkFrame):
         # Hover & Click events
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
-        self.bind("<Button-1>", self._on_row_click)
-        self.bind("<Double-Button-1>", lambda e: self._trigger_play())
+        self.bind("<Button-1>", lambda e: self._trigger_play())
         self.bind("<Button-3>", lambda e: self._show_context_menu(e))
         
-        for widget in (self.thumb_lbl, self.info_frame, self.title_lbl, self.subtitle_lbl):
+        for widget in (self.thumb_lbl, self.info_frame, self.title_lbl, self.subtitle_lbl, self.duration_lbl):
             widget.bind("<Enter>", self._on_enter)
             widget.bind("<Leave>", self._on_leave)
-            widget.bind("<Button-1>", self._on_row_click)
-            widget.bind("<Double-Button-1>", lambda e: self._trigger_play())
+            widget.bind("<Button-1>", lambda e: self._trigger_play())
             widget.bind("<Button-3>", lambda e: self._show_context_menu(e))
+
 
         if track_data:
             self.update_data(track_data)

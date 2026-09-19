@@ -153,12 +153,13 @@ def load_thumbnail_async(
       and updates target_widget or calls callback safely on main thread.
     """
     placeholder = _get_placeholder(size)
-    if not audio_path:
+    if not audio_path or not os.path.exists(audio_path):
         if target_widget and hasattr(target_widget, 'configure'):
             target_widget.configure(image=placeholder)
         if callback:
             callback(placeholder)
         return placeholder
+
 
     cache_key = hashlib.md5(audio_path.encode('utf-8', errors='ignore')).hexdigest()
     mem_key = (cache_key, size[0], size[1])

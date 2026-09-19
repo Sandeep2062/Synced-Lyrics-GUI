@@ -92,9 +92,20 @@ class AppWindow(ctk.CTk):
         self.now_playing = NowPlayingBar(self, app_window=self, on_toggle_lyrics=self.toggle_lyrics_drawer)
         self.now_playing.grid(row=3, column=0, sticky="ew")
         
-        # 6. Status Bar
-        self.status_bar = StatusBar(self)
-        self.status_bar.grid(row=4, column=0, sticky="ew")
+        # 6. Status Proxy (Embedded in Player Bar, eliminating awkward bottom bar)
+        class _StatusProxy:
+            def __init__(self, np):
+                self.np = np
+            def set_status(self, msg: str):
+                if hasattr(self.np, 'set_status'):
+                    self.np.set_status(msg)
+            def set_now_playing(self, msg: str):
+                pass
+            def update_stats(self, **kwargs):
+                pass
+
+        self.status_bar = _StatusProxy(self.now_playing)
+
         
         # Active View State
         self.current_view = None

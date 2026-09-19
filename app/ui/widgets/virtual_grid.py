@@ -151,11 +151,15 @@ class VirtualAlbumGrid(ctk.CTkFrame):
                     ch.bind("<MouseWheel>", self._on_mousewheel)
                 self.card_pool.append(card)
 
+        self._pending_update = False
+
     def _on_scrollbar_drag(self, action, fraction=None, *args):
         try:
             val = float(fraction) if fraction is not None else 0.0
             self._scroll_pos = max(0.0, min(1.0, val))
-            self._update_visible_cards()
+            if not self._pending_update:
+                self._pending_update = True
+                self.after_idle(self._do_update_visible_cards)
         except Exception:
             pass
 
@@ -165,12 +169,18 @@ class VirtualAlbumGrid(ctk.CTkFrame):
         total_rows = max(1, math.ceil(len(self.items) / max(1, self.cards_per_row)))
         if total_rows <= self.visible_rows_count:
             return
-        step = 1.0 / max(1, total_rows - self.visible_rows_count)
-        if event.delta > 0:
-            self._scroll_pos = max(0.0, self._scroll_pos - step)
-        else:
-            self._scroll_pos = min(1.0, self._scroll_pos + step)
+        delta = event.delta
+        ticks = delta / 120.0 if abs(delta) >= 120 else (1.0 if delta > 0 else -1.0)
+        step = (1.5 * ticks) / max(1, total_rows - self.visible_rows_count)
+        self._scroll_pos = max(0.0, min(1.0, self._scroll_pos - step))
+        if not self._pending_update:
+            self._pending_update = True
+            self.after_idle(self._do_update_visible_cards)
+
+    def _do_update_visible_cards(self):
+        self._pending_update = False
         self._update_visible_cards()
+
 
     def _update_visible_cards(self):
         total = len(self.items)
@@ -318,12 +328,15 @@ class VirtualArtistList(ctk.CTkFrame):
             for ch in (row.name_lbl, row.sub_lbl):
                 ch.bind("<MouseWheel>", self._on_mousewheel)
             self.row_pool.append(row)
+        self._pending_update = False
 
     def _on_scrollbar_drag(self, action, fraction=None, *args):
         try:
             val = float(fraction) if fraction is not None else 0.0
             self._scroll_pos = max(0.0, min(1.0, val))
-            self._update_visible_rows()
+            if not self._pending_update:
+                self._pending_update = True
+                self.after_idle(self._do_update_visible_rows)
         except Exception:
             pass
 
@@ -333,12 +346,18 @@ class VirtualArtistList(ctk.CTkFrame):
         total = len(self.items)
         if total <= self._visible_count:
             return
-        step = 3 / total
-        if event.delta > 0:
-            self._scroll_pos = max(0.0, self._scroll_pos - step)
-        else:
-            self._scroll_pos = min(1.0, self._scroll_pos + step)
+        delta = event.delta
+        ticks = delta / 120.0 if abs(delta) >= 120 else (1.0 if delta > 0 else -1.0)
+        step = (4.0 * ticks) / total
+        self._scroll_pos = max(0.0, min(1.0, self._scroll_pos - step))
+        if not self._pending_update:
+            self._pending_update = True
+            self.after_idle(self._do_update_visible_rows)
+
+    def _do_update_visible_rows(self):
+        self._pending_update = False
         self._update_visible_rows()
+
 
     def _update_visible_rows(self):
         total = len(self.items)

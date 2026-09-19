@@ -85,11 +85,15 @@ class VirtualTrackList(ctk.CTkFrame):
                 ch.bind("<MouseWheel>", self._on_mousewheel)
             self.row_pool.append(row)
 
+        self._pending_update = False
+
     def _on_scrollbar_drag(self, action, fraction=None, *args):
         try:
             val = float(fraction) if fraction is not None else 0.0
             self._scroll_pos = max(0.0, min(1.0, val))
-            self._update_visible_rows()
+            if not self._pending_update:
+                self._pending_update = True
+                self.after_idle(self._do_update_visible_rows)
         except Exception:
             pass
 
@@ -100,13 +104,20 @@ class VirtualTrackList(ctk.CTkFrame):
         if total <= self._visible_count:
             return
             
-        step = 3 / total # scroll 3 items per notch
-        if event.delta > 0:
-            self._scroll_pos = max(0.0, self._scroll_pos - step)
-        else:
-            self._scroll_pos = min(1.0, self._scroll_pos + step)
-            
+        delta = event.delta
+        ticks = delta / 120.0 if abs(delta) >= 120 else (1.0 if delta > 0 else -1.0)
+        step = (5.0 * ticks) / total # 5 tracks per wheel notch
+        
+        self._scroll_pos = max(0.0, min(1.0, self._scroll_pos - step))
+        
+        if not self._pending_update:
+            self._pending_update = True
+            self.after_idle(self._do_update_visible_rows)
+
+    def _do_update_visible_rows(self):
+        self._pending_update = False
         self._update_visible_rows()
+
 
     def _update_visible_rows(self):
         total = len(self.items)
