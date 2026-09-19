@@ -1,0 +1,136 @@
+"""Embedded album artwork extractor and high-performance thumbnail cache."""
+import os
+import io
+import hashlib
+from typing import Optional, Tuple
+from PIL import Image, ImageDraw
+import customtkinter as ctk
+import mutagen
+from mutagen.id3 import ID3, APIC
+from mutagen.flac import FLAC
+from mutagen.mp4 import MP4
+
+from app.constants import APPDATA_DIR
+
+ART_CACHE_DIR = APPDATA_DIR / 'cache' / 'art'
+ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# In-memory LRU cache: (cache_key, size) -> ctk.CTkImage
+_MEM_CACHE: dict = {}
+_MAX_MEM_ENTRIES = 500
+
+# Reusable default placeholder image
+_PLACEHOLDER_CACHE: dict = {}
+
+def _get_placeholder(size: Tuple[int, int]) -> ctk.CTkImage:
+    if size in _PLACEHOLDER_CACHE:
+        return _PLACEHOLDER_CACHE[size]
+    w, h = size
+    img = Image.new('RGBA', (w, h), (24, 24, 28, 255))
+    draw = ImageDraw.Draw(img)
+    # Subtle border
+    draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=4, outline=(42, 42, 48, 255), width=1)
+    # Note placeholder
+    ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
+    _PLACEHOLDER_CACHE[size] = ctk_img
+    return ctk_img
+
+def extract_raw_cover(audio_path: str) -> Optional[bytes]:
+    """Extract raw cover artwork bytes from ID3, FLAC, or MP4 tags."""
+    if not os.path.exists(audio_path):
+        return None
+
+    ext = os.path.splitext(audio_path)[1].lower()
+    try:
+        if ext == '.mp3':
+            try:
+                id3 = ID3(audio_path)
+                for tag in id3.values():
+                    if isinstance(tag, APIC):
+                        return tag.data
+            except Exception:
+                pass
+        elif ext == '.flac':
+            try:
+                flac = FLAC(audio_path)
+                if flac.pictures:
+                    return flac.pictures[0].data
+            except Exception:
+                pass
+        elif ext in ('.m4a', '.mp4', '.aac'):
+            try:
+                mp4 = MP4(audio_path)
+                covr = mp4.tags.get('covr') if mp4.tags else None
+                if covr and len(covr) > 0:
+                    return bytes(covr[0])
+            except Exception:
+                pass
+        else:
+            # Generic fallback with mutagen.File
+            try:
+                meta = mutagen.File(audio_path)
+                if hasattr(meta, 'pictures') and meta.pictures:
+                    return meta.pictures[0].data
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return None
+
+def get_thumbnail(audio_path: str, size: Tuple[int, int] = (40, 40)) -> ctk.CTkImage:
+    """
+    Get a cached CTkImage thumbnail for a track, extracting embedded art if present.
+    Returns a sleek dark placeholder if no artwork is embedded.
+    """
+    if not audio_path:
+        return _get_placeholder(size)
+
+    cache_key = hashlib.md5(audio_path.encode('utf-8', errors='ignore')).hexdigest()
+    mem_key = (cache_key, size[0], size[1])
+    
+    if mem_key in _MEM_CACHE:
+        return _MEM_CACHE[mem_key]
+
+    disk_path = ART_CACHE_DIR / f"{cache_key}_{size[0]}x{size[1]}.png"
+    
+    # Check disk cache
+    if disk_path.exists():
+        try:
+            pil_img = Image.open(str(disk_path))
+            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
+            if len(_MEM_CACHE) > _MAX_MEM_ENTRIES:
+                _MEM_CACHE.pop(next(iter(_MEM_CACHE)))
+            _MEM_CACHE[mem_key] = ctk_img
+            return ctk_img
+        except Exception:
+            pass
+
+    # Extract artwork from file
+    raw_data = extract_raw_cover(audio_path)
+    if raw_data:
+        try:
+            pil_img = Image.open(io.BytesIO(raw_data)).convert('RGBA')
+            pil_img = pil_img.resize(size, Image.Resampling.LANCZOS)
+            
+            # Apply rounded corners to match modern card UI
+            mask = Image.new('L', size, 0)
+            draw = ImageDraw.Draw(mask)
+            draw.rounded_rectangle([(0, 0), (size[0] - 1, size[1] - 1)], radius=4, fill=255)
+            pil_img.putalpha(mask)
+            
+            # Save to disk
+            pil_img.save(str(disk_path), format='PNG')
+            
+            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
+            if len(_MEM_CACHE) > _MAX_MEM_ENTRIES:
+                _MEM_CACHE.pop(next(iter(_MEM_CACHE)))
+            _MEM_CACHE[mem_key] = ctk_img
+            return ctk_img
+        except Exception:
+            pass
+
+    # Fallback to placeholder
+    placeholder = _get_placeholder(size)
+    _MEM_CACHE[mem_key] = placeholder
+    return placeholder

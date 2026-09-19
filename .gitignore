@@ -22,6 +22,8 @@ mono_crash.*
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+dist/
+build/
 
 [Dd]ebug/x64/
 [Dd]ebugPublic/x64/
@@ -425,5 +427,12 @@ FodyWeavers.xsd
 *.cab
 *.msi
 *.msix
-*.msm
 *.msp
+
+# Local reference and caches
+lrcget/
+.venv/
+venv/
+ENV/
+.pytest_cache/
+
