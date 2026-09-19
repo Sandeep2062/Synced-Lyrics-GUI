@@ -85,6 +85,44 @@ class TestUIWidgets(unittest.TestCase):
 
         frame.destroy()
 
+    def test_virtual_album_grid(self):
+        from app.ui.widgets.virtual_grid import VirtualAlbumGrid
+        frame = ctk.CTkFrame(self.root)
+        grid = VirtualAlbumGrid(frame)
+        self.assertIsNotNone(grid)
+
+        dummy_albums = [
+            {
+                "album": f"Album {i}",
+                "artist": f"Artist {i % 10}",
+                "track_count": 10 + (i % 5),
+                "sample_path": f"C:/Music/track_{i}.mp3"
+            }
+            for i in range(50)
+        ]
+        grid.set_items(dummy_albums)
+        self.assertEqual(len(grid.items), 50)
+        frame.destroy()
+
+    def test_virtual_artist_list(self):
+        from app.ui.widgets.virtual_grid import VirtualArtistList
+        frame = ctk.CTkFrame(self.root)
+        alist = VirtualArtistList(frame)
+        self.assertIsNotNone(alist)
+
+        dummy_artists = [
+            {
+                "artist": f"Artist {i}",
+                "track_count": 20 + i,
+                "album_count": 2 + (i % 4)
+            }
+            for i in range(40)
+        ]
+        alist.set_items(dummy_artists)
+        self.assertEqual(len(alist.items), 40)
+        frame.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()
+

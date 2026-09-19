@@ -7,7 +7,8 @@ from typing import Callable, Any, Optional
 
 from app.ui.theme import COLORS, FONTS, get_status_colors
 from app.core.lrc_utils import fmt_duration
-from app.core.art_cache import get_thumbnail
+from app.core.art_cache import get_thumbnail, load_thumbnail_async
+
 
 def _get_val(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
@@ -181,9 +182,9 @@ class TrackRow(ctk.CTkFrame):
         self.pill_frame.configure(fg_color=bg_col)
         self.pill_lbl.configure(text=status_clean, text_color=fg_col)
         
-        # Thumbnail (extracted from cache)
-        thumb = get_thumbnail(audio_path, size=(40, 40))
-        self.thumb_lbl.configure(image=thumb)
+        # Thumbnail (extracted asynchronously in background thread)
+        load_thumbnail_async(audio_path, size=(40, 40), target_widget=self.thumb_lbl)
+
 
     def _trigger_play(self):
         if self.on_play and self.track_data:

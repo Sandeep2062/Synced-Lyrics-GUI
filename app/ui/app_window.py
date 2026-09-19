@@ -214,11 +214,12 @@ class AppWindow(ctk.CTk):
         self.views[view_name].grid(row=0, column=0, sticky="nsew")
         self.config.last_view = view_name
         
-        # Lazy load data for tabs
+        # Lazy load data for tabs (instant: only on first visit)
         if view_name == 'albums':
-            self.views['albums'].load_albums()
+            self.views['albums'].load_albums(force=False)
         elif view_name == 'artists':
-            self.views['artists'].load_artists()
+            self.views['artists'].load_artists(force=False)
+
 
     def toggle_lyrics_drawer(self):
         """Toggle slide-up lyrics panel matching screenshot 2."""

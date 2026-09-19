@@ -45,12 +45,12 @@ class FFmpegManager:
             return False
 
     def ensure_available(self) -> str:
+        ffmpeg_str = str(self.ffmpeg_dir)
         if self.is_installed():
-            if self.ffmpeg_dir not in os.environ['PATH']:
-                os.environ['PATH'] += os.pathsep + self.ffmpeg_dir
+            if ffmpeg_str not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = os.environ.get('PATH', '') + os.pathsep + ffmpeg_str
             return self.exe_path
         
-        self.download(lambda p: None)
-        if self.ffmpeg_dir not in os.environ['PATH']:
-            os.environ['PATH'] += os.pathsep + self.ffmpeg_dir
+        # Don't block GUI thread with download if called synchronously
         return self.exe_path
+

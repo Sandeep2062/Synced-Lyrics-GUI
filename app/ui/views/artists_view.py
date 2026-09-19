@@ -1,8 +1,10 @@
-"""Artists browser view grouping music by artist."""
+"""Artists browser view grouping music by artist with virtualized list."""
 import customtkinter as ctk
 from typing import Any, List, Optional
 from app.ui.theme import COLORS, FONTS
+from app.ui.widgets.virtual_grid import VirtualArtistList
 from app.ui.widgets.track_row import TrackRow
+
 
 class ArtistsView(ctk.CTkFrame):
     """View displaying list of artists with discography and tracks."""
@@ -34,8 +36,9 @@ class ArtistsView(ctk.CTkFrame):
         )
         self.search_entry.pack(fill="x", padx=10, pady=10)
         
-        self.artists_scroll = ctk.CTkScrollableFrame(self.left_frame, fg_color=COLORS['bg_secondary'])
-        self.artists_scroll.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        # Virtualized Artist List (recycles rows)
+        self.artists_list = VirtualArtistList(self.left_frame, on_select=self.select_artist)
+        self.artists_list.pack(fill="both", expand=True, padx=6, pady=(0, 6))
         
         # Right Panel (Artist Tracks & Details)
         self.right_frame = ctk.CTkFrame(self, fg_color=COLORS['bg_secondary'], corner_radius=6)
@@ -63,41 +66,19 @@ class ArtistsView(ctk.CTkFrame):
         self.tracks_scroll = ctk.CTkScrollableFrame(self.right_frame, fg_color=COLORS['bg_secondary'])
         self.tracks_scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-    def load_artists(self):
+    def load_artists(self, force: bool = False):
+        if not force and self.artists_data:
+            return
         self.artists_data = self.app_window.db.get_artists()
         self._filter_artists()
 
     def _filter_artists(self):
         query = self.search_var.get().strip().lower()
-        for w in self.artists_scroll.winfo_children():
-            w.destroy()
-
         filtered = [
             a for a in self.artists_data 
             if not query or query in a.get('artist', '').lower()
         ]
-
-        if not filtered:
-            lbl = ctk.CTkLabel(self.artists_scroll, text="No artists found.", text_color=COLORS['text_muted'])
-            lbl.pack(pady=40)
-            return
-
-        for artist in filtered:
-            name = artist.get('artist', 'Unknown Artist')
-            count = artist.get('track_count', 0)
-            albums = artist.get('album_count', 0)
-            
-            btn = ctk.CTkButton(
-                self.artists_scroll,
-                text=f"{name}\n{count} tracks • {albums} albums",
-                font=FONTS['body'],
-                anchor="w",
-                fg_color="transparent",
-                text_color=COLORS['text_primary'],
-                hover_color=COLORS['bg_hover'],
-                command=lambda a=artist: self.select_artist(a)
-            )
-            btn.pack(fill="x", pady=2, padx=4)
+        self.artists_list.set_items(filtered)
 
     def select_artist(self, artist_info: dict):
         self.active_artist = artist_info

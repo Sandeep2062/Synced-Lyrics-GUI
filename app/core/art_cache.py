@@ -126,7 +126,6 @@ def get_thumbnail(audio_path: str, size: Tuple[int, int] = (40, 40)) -> ctk.CTkI
             if len(_MEM_CACHE) > _MAX_MEM_ENTRIES:
                 _MEM_CACHE.pop(next(iter(_MEM_CACHE)))
             _MEM_CACHE[mem_key] = ctk_img
-            return ctk_img
         except Exception:
             pass
 
@@ -134,3 +133,82 @@ def get_thumbnail(audio_path: str, size: Tuple[int, int] = (40, 40)) -> ctk.CTkI
     placeholder = _get_placeholder(size)
     _MEM_CACHE[mem_key] = placeholder
     return placeholder
+
+import concurrent.futures
+from typing import Callable, Any
+
+_THUMB_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="ArtLoader")
+
+
+def load_thumbnail_async(
+    audio_path: str,
+    size: Tuple[int, int] = (40, 40),
+    target_widget: Optional[Any] = None,
+    callback: Optional[Callable[[ctk.CTkImage], None]] = None
+) -> ctk.CTkImage:
+    """
+    Asynchronously loads thumbnail without blocking the main UI thread.
+    - If in memory, sets image immediately and returns it.
+    - If not in memory, sets placeholder immediately, extracts artwork in background,
+      and updates target_widget or calls callback safely on main thread.
+    """
+    placeholder = _get_placeholder(size)
+    if not audio_path:
+        if target_widget and hasattr(target_widget, 'configure'):
+            target_widget.configure(image=placeholder)
+        if callback:
+            callback(placeholder)
+        return placeholder
+
+    cache_key = hashlib.md5(audio_path.encode('utf-8', errors='ignore')).hexdigest()
+    mem_key = (cache_key, size[0], size[1])
+
+    if mem_key in _MEM_CACHE:
+        cached = _MEM_CACHE[mem_key]
+        if target_widget and hasattr(target_widget, 'configure'):
+            target_widget.configure(image=cached)
+        if callback:
+            callback(cached)
+        return cached
+
+    # Check if file exists on disk
+    disk_path = ART_CACHE_DIR / f"{cache_key}_{size[0]}x{size[1]}.png"
+    if disk_path.exists():
+        try:
+            pil_img = Image.open(str(disk_path))
+            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
+            if len(_MEM_CACHE) > _MAX_MEM_ENTRIES:
+                _MEM_CACHE.pop(next(iter(_MEM_CACHE)))
+            _MEM_CACHE[mem_key] = ctk_img
+            if target_widget and hasattr(target_widget, 'configure'):
+                target_widget.configure(image=ctk_img)
+            if callback:
+                callback(ctk_img)
+            return ctk_img
+        except Exception:
+            pass
+
+    # Show placeholder immediately while worker decodes
+    if target_widget and hasattr(target_widget, 'configure'):
+        target_widget.configure(image=placeholder)
+        target_widget._current_audio_art = audio_path
+
+    def _worker():
+        img = get_thumbnail(audio_path, size)
+        if target_widget and hasattr(target_widget, 'after'):
+            def _apply():
+                try:
+                    if getattr(target_widget, '_current_audio_art', None) == audio_path:
+                        target_widget.configure(image=img)
+                except Exception:
+                    pass
+            try:
+                target_widget.after(0, _apply)
+            except Exception:
+                pass
+        if callback:
+            callback(img)
+
+    _THUMB_EXECUTOR.submit(_worker)
+    return placeholder
+

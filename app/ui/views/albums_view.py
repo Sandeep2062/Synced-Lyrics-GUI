@@ -1,70 +1,14 @@
-"""Albums grid browser with album-level lyrics downloading and track lists."""
+"""Albums grid browser with album-level lyrics downloading and virtualized grid."""
 import customtkinter as ctk
 from typing import Any, List, Optional
 from app.ui.theme import COLORS, FONTS
-from app.core.art_cache import get_thumbnail
+from app.core.art_cache import load_thumbnail_async
+from app.ui.widgets.virtual_grid import VirtualAlbumGrid
 from app.ui.widgets.track_row import TrackRow
 
-class AlbumCard(ctk.CTkFrame):
-    """Visual album card with 120x120 artwork cover, title, artist, and track count."""
-    def __init__(self, master: Any, album_info: dict, on_open: Any, **kwargs):
-        super().__init__(
-            master, 
-            fg_color=COLORS['bg_secondary'], 
-            corner_radius=8, 
-            width=160, 
-            height=210, 
-            **kwargs
-        )
-        self.pack_propagate(False)
-        self.album_info = album_info
-        self.on_open = on_open
-        
-        album_name = album_info.get('album', 'Unknown Album')
-        artist_name = album_info.get('artist', 'Unknown Artist')
-        count = album_info.get('track_count', 0)
-        sample_path = album_info.get('sample_path', '')
-        
-        # Album Art
-        self.art_lbl = ctk.CTkLabel(self, text="", width=140, height=140)
-        self.art_lbl.pack(padx=10, pady=(10, 4))
-        
-        # Load cover
-        thumb = get_thumbnail(sample_path, size=(140, 140))
-        self.art_lbl.configure(image=thumb)
-        
-        # Title
-        self.title_lbl = ctk.CTkLabel(
-            self, 
-            text=album_name, 
-            font=FONTS['body_bold'], 
-            text_color=COLORS['text_primary'],
-            anchor="w"
-        )
-        self.title_lbl.pack(fill="x", padx=10)
-        
-        # Subtitle
-        self.sub_lbl = ctk.CTkLabel(
-            self, 
-            text=f"{artist_name} • {count} tracks", 
-            font=FONTS['small'], 
-            text_color=COLORS['text_muted'],
-            anchor="w"
-        )
-        self.sub_lbl.pack(fill="x", padx=10, pady=(0, 6))
-
-        # Events
-        self.bind("<Enter>", lambda e: self.configure(fg_color=COLORS['bg_hover']))
-        self.bind("<Leave>", lambda e: self.configure(fg_color=COLORS['bg_secondary']))
-        self.bind("<Button-1>", lambda e: self.on_open(self.album_info))
-        
-        for w in (self.art_lbl, self.title_lbl, self.sub_lbl):
-            w.bind("<Enter>", lambda e: self.configure(fg_color=COLORS['bg_hover']))
-            w.bind("<Leave>", lambda e: self.configure(fg_color=COLORS['bg_secondary']))
-            w.bind("<Button-1>", lambda e: self.on_open(self.album_info))
 
 class AlbumsView(ctk.CTkFrame):
-    """View displaying all music albums with cover thumbnails and album details."""
+    """View displaying all music albums with instant virtualized grid."""
     def __init__(self, master: Any, app_window: Any, **kwargs):
         super().__init__(master, fg_color=COLORS['bg_primary'], **kwargs)
         self.app_window = app_window
@@ -107,9 +51,9 @@ class AlbumsView(ctk.CTkFrame):
         )
         self.album_count_lbl.pack(side="right", padx=10)
 
-        # Scrollable grid frame
-        self.scroll_grid = ctk.CTkScrollableFrame(self.grid_frame, fg_color=COLORS['bg_primary'])
-        self.scroll_grid.pack(fill="both", expand=True, padx=10, pady=4)
+        # High-performance 60fps Virtual Album Grid
+        self.album_grid = VirtualAlbumGrid(self.grid_frame, on_open=self.open_album)
+        self.album_grid.pack(fill="both", expand=True, padx=10, pady=4)
 
     def _build_detail_view(self):
         self.detail_frame = ctk.CTkFrame(self.main_container, fg_color=COLORS['bg_primary'])
@@ -161,44 +105,21 @@ class AlbumsView(ctk.CTkFrame):
         self.album_tracks_scroll = ctk.CTkScrollableFrame(self.detail_frame, fg_color=COLORS['bg_primary'])
         self.album_tracks_scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-    def load_albums(self):
+    def load_albums(self, force: bool = False):
         """Fetch albums from database and populate grid."""
+        if not force and self.albums_data:
+            return
         self.albums_data = self.app_window.db.get_albums()
         self._filter_albums()
 
     def _filter_albums(self):
         query = self.search_var.get().strip().lower()
-        for w in self.scroll_grid.winfo_children():
-            w.destroy()
-
         filtered = [
             a for a in self.albums_data 
             if not query or query in a.get('album', '').lower() or query in a.get('artist', '').lower()
         ]
-        
         self.album_count_lbl.configure(text=f"{len(filtered)} albums")
-        
-        if not filtered:
-            lbl = ctk.CTkLabel(
-                self.scroll_grid, 
-                text="No albums found in your music library.\nAdd folders in Settings to populate albums.",
-                font=FONTS['body'],
-                text_color=COLORS['text_muted']
-            )
-            lbl.pack(pady=60)
-            return
-
-        # Render in a responsive grid using a flow frame layout
-        row_frame = None
-        cards_per_row = 5 # default approximate
-        
-        for idx, album in enumerate(filtered):
-            if idx % cards_per_row == 0:
-                row_frame = ctk.CTkFrame(self.scroll_grid, fg_color="transparent")
-                row_frame.pack(fill="x", pady=6)
-                
-            card = AlbumCard(row_frame, album_info=album, on_open=self.open_album)
-            card.pack(side="left", padx=8)
+        self.album_grid.set_items(filtered)
 
     def open_album(self, album_info: dict):
         self.active_album = album_info
@@ -209,9 +130,8 @@ class AlbumsView(ctk.CTkFrame):
         self.detail_title.configure(text=album_name)
         self.detail_sub.configure(text=f"{artist_name} • {album_info.get('track_count', 0)} tracks")
         
-        # Load cover
-        cover = get_thumbnail(sample_path, size=(110, 110))
-        self.detail_cover.configure(image=cover)
+        # Load cover asynchronously
+        load_thumbnail_async(sample_path, size=(110, 110), target_widget=self.detail_cover)
         
         # Load tracks for this album
         tracks = self.app_window.db.get_tracks_by_album(album_name)
