@@ -106,7 +106,8 @@ class VirtualTrackList(ctk.CTkFrame):
             
         delta = event.delta
         ticks = delta / 120.0 if abs(delta) >= 120 else (1.0 if delta > 0 else -1.0)
-        step = (5.0 * ticks) / total # 5 tracks per wheel notch
+        max_scrollable = max(1, total - self._visible_count)
+        step = (3.5 * ticks) / max_scrollable
         
         self._scroll_pos = max(0.0, min(1.0, self._scroll_pos - step))
         

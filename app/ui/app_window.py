@@ -83,6 +83,8 @@ class AppWindow(ctk.CTk):
             'logs': LogsView(self.content_frame, app_window=self),
             'settings': SettingsView(self.content_frame, app_window=self)
         }
+        for view in self.views.values():
+            view.grid(row=0, column=0, sticky="nsew")
         
         # 4. Slide-Up Lyrics Drawer (Hidden by default)
         self.lyrics_drawer = LyricsDrawer(self, app_window=self, on_close=self.toggle_lyrics_drawer)
@@ -133,9 +135,9 @@ class AppWindow(ctk.CTk):
         logo_png = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "icon.png")
         if os.path.exists(logo_png):
             try:
-                pil_logo = Image.open(logo_png).resize((28, 28), Image.Resampling.LANCZOS)
-                self.logo_img = ctk.CTkImage(light_image=pil_logo, dark_image=pil_logo, size=(28, 28))
-                ctk.CTkLabel(logo_frame, text="", image=self.logo_img, width=28, height=28).pack(side="left", padx=(0, 8))
+                pil_logo = Image.open(logo_png).resize((26, 26), Image.Resampling.LANCZOS)
+                self.logo_img = ctk.CTkImage(light_image=pil_logo, dark_image=pil_logo, size=(26, 26))
+                ctk.CTkLabel(logo_frame, text="", image=self.logo_img, width=26, height=26).pack(side="left", padx=(0, 10))
             except Exception:
                 pass
                 
@@ -143,7 +145,7 @@ class AppWindow(ctk.CTk):
             logo_frame, 
             text="SYNCED LYRICS", 
             font=FONTS['heading'], 
-            text_color=COLORS['accent']
+            text_color=COLORS['text_primary']
         )
         self.app_title_lbl.pack(side="left")
 
@@ -167,15 +169,15 @@ class AppWindow(ctk.CTk):
                 fg_color="transparent",
                 text_color=COLORS['text_muted'],
                 hover_color=COLORS['bg_button'],
-                corner_radius=4,
-                width=80,
-                height=32,
+                corner_radius=6,
+                width=82,
+                height=30,
                 command=lambda v=tab_id: self.switch_view(v)
             )
             btn.pack(side="left", padx=3)
             self.nav_tabs[tab_id] = btn
 
-        # Right Action Buttons: 'DOWNLOAD ALL LYRICS' Pink Pill & 'Add Folder'
+        # Right Action Buttons: 'DOWNLOAD ALL LYRICS' Pill & 'Add Folder'
         self.header_actions = ctk.CTkFrame(self.header_frame, fg_color="transparent")
         self.header_actions.pack(side="right", padx=16)
         
@@ -211,18 +213,24 @@ class AppWindow(ctk.CTk):
         if view_name not in self.views:
             return
             
-        if self.current_view and self.current_view in self.views:
-            self.views[self.current_view].grid_forget()
-            
-        # Update tab styling
+        # Update tab styling with instant active indicator
         for tid, btn in self.nav_tabs.items():
             if tid == view_name:
-                btn.configure(text_color=COLORS['accent'], fg_color=COLORS['bg_button'])
+                btn.configure(
+                    text_color=COLORS['text_primary'], 
+                    fg_color=COLORS['bg_button'],
+                    border_width=1,
+                    border_color=COLORS['accent']
+                )
             else:
-                btn.configure(text_color=COLORS['text_muted'], fg_color="transparent")
+                btn.configure(
+                    text_color=COLORS['text_muted'], 
+                    fg_color="transparent",
+                    border_width=0
+                )
                 
         self.current_view = view_name
-        self.views[view_name].grid(row=0, column=0, sticky="nsew")
+        self.views[view_name].tkraise()
         self.config.last_view = view_name
         
         # Lazy load data for tabs (instant: only on first visit)
@@ -230,6 +238,9 @@ class AppWindow(ctk.CTk):
             self.views['albums'].load_albums(force=False)
         elif view_name == 'artists':
             self.views['artists'].load_artists(force=False)
+        elif view_name == 'logs':
+            if hasattr(self.views['logs'], '_refresh_current_tab'):
+                self.views['logs']._refresh_current_tab()
 
 
     def toggle_lyrics_drawer(self):

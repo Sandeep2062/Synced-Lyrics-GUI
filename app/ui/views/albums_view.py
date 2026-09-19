@@ -130,18 +130,20 @@ class AlbumsView(ctk.CTkFrame):
         self.detail_title.configure(text=album_name)
         self.detail_sub.configure(text=f"{artist_name} • {album_info.get('track_count', 0)} tracks")
         
-        # Load cover asynchronously
+        # Load cover asynchronously (checks embedded art, then folder cover.jpg)
         load_thumbnail_async(sample_path, size=(110, 110), target_widget=self.detail_cover)
         
-        # Load tracks for this album
+        # Load tracks for this album (clean layout with track numbers 01, 02... matching LRCGET)
         tracks = self.app_window.db.get_tracks_by_album(album_name)
         for w in self.album_tracks_scroll.winfo_children():
             w.destroy()
             
-        for t in tracks:
+        for idx, t in enumerate(tracks, 1):
             row = TrackRow(
                 self.album_tracks_scroll,
                 track_data=t,
+                show_cover=False,
+                track_index=idx,
                 on_play=lambda track=t: self.app_window.play_track(track),
                 on_search=lambda track=t: self.app_window.download_single_track(track)
             )
@@ -154,6 +156,12 @@ class AlbumsView(ctk.CTkFrame):
             return
         album_name = self.active_album.get('album')
         tracks = self.app_window.db.get_tracks_by_album(album_name)
+        if not tracks:
+            return
+            
+        self.dl_album_btn.configure(text="⏳ Downloading...")
+        self.after(1000, lambda: self.dl_album_btn.configure(text="⬇ Download Album Lyrics"))
+        
         from app.core.scanner import TrackInfo
         track_objs = [
             TrackInfo(

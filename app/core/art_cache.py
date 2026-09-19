@@ -26,17 +26,30 @@ def _get_placeholder(size: Tuple[int, int]) -> ctk.CTkImage:
     if size in _PLACEHOLDER_CACHE:
         return _PLACEHOLDER_CACHE[size]
     w, h = size
-    img = Image.new('RGBA', (w, h), (24, 24, 28, 255))
+    img = Image.new('RGBA', (w, h), (18, 20, 29, 255))
     draw = ImageDraw.Draw(img)
     # Subtle border
-    draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=4, outline=(42, 42, 48, 255), width=1)
-    # Note placeholder
+    draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=6, outline=(35, 39, 58, 255), width=1)
+    
+    # Draw minimalist vinyl grooves / musical symbol placeholder
+    cx, cy = w // 2, h // 2
+    r_max = min(w, h) // 3
+    if r_max > 8:
+        # Concentric vinyl rings
+        draw.ellipse([(cx - r_max, cy - r_max), (cx + r_max, cy + r_max)], outline=(28, 32, 48, 255), width=1)
+        r_mid = int(r_max * 0.65)
+        draw.ellipse([(cx - r_mid, cy - r_mid), (cx + r_mid, cy + r_mid)], outline=(35, 40, 60, 255), width=1)
+        r_inner = max(2, int(r_max * 0.3))
+        draw.ellipse([(cx - r_inner, cy - r_inner), (cx + r_inner, cy + r_inner)], fill=(139, 92, 246, 180)) # Violet center
+    else:
+        draw.ellipse([(cx - 3, cy - 3), (cx + 3, cy + 3)], fill=(139, 92, 246, 180))
+
     ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
     _PLACEHOLDER_CACHE[size] = ctk_img
     return ctk_img
 
 def extract_raw_cover(audio_path: str) -> Optional[bytes]:
-    """Extract raw cover artwork bytes from ID3, FLAC, or MP4 tags."""
+    """Extract raw cover artwork bytes from ID3, FLAC, MP4 tags or directory images."""
     if not os.path.exists(audio_path):
         return None
 
@@ -73,6 +86,24 @@ def extract_raw_cover(audio_path: str) -> Optional[bytes]:
                     return meta.pictures[0].data
             except Exception:
                 pass
+    except Exception:
+        pass
+
+    # If embedded art is absent, check parent directory for common album art files
+    try:
+        parent_dir = os.path.dirname(audio_path)
+        if os.path.isdir(parent_dir):
+            common_names = {
+                'cover.jpg', 'cover.jpeg', 'cover.png',
+                'folder.jpg', 'folder.png', 'folder.jpeg',
+                'album.jpg', 'album.png', 'front.jpg', 'front.png'
+            }
+            for fname in os.listdir(parent_dir):
+                if fname.lower() in common_names:
+                    candidate = os.path.join(parent_dir, fname)
+                    if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                        with open(candidate, 'rb') as f:
+                            return f.read()
     except Exception:
         pass
 

@@ -348,7 +348,8 @@ class VirtualArtistList(ctk.CTkFrame):
             return
         delta = event.delta
         ticks = delta / 120.0 if abs(delta) >= 120 else (1.0 if delta > 0 else -1.0)
-        step = (4.0 * ticks) / total
+        max_scrollable = max(1, total - self._visible_count)
+        step = (3.0 * ticks) / max_scrollable
         self._scroll_pos = max(0.0, min(1.0, self._scroll_pos - step))
         if not self._pending_update:
             self._pending_update = True

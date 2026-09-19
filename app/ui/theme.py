@@ -1,47 +1,52 @@
-"""LRCGET-inspired pure-black color palette and theme constants."""
+"""Modern Electric Violet & Midnight Obsidian color palette and theme constants."""
 
 COLORS = {
-    'bg_primary': '#0A0A0A',      # Main app background (neutral-950)
-    'bg_secondary': '#121212',    # Row and card background
-    'bg_tertiary': '#18181B',     # Pill and card inner background
-    'bg_toolbar': '#171717',      # Header & titlebar (neutral-900)
-    'bg_surface': '#141414',      # Modal / drawer background
-    'bg_hover': '#1C1C1C',        # Hover state
-    'bg_selected': '#242424',     # Selected state
-    'bg_input': '#1A1A1E',        # Search & input background
-    'bg_button': '#262626',       # Normal button background (neutral-800)
-    'bg_button_hover': '#333333',
-    'border': '#262626',
-    'border_light': '#333333',
-    'slider_rail': '#333338',
-    'accent': '#F35697',          # LRCGET signature rose (hoa-1100)
-    'accent_hover': '#FB73A4',
-    'accent_active': '#DC4089',
-    'accent_dark': '#A82C6C',
-    'text_primary': '#FFFFFF',
-    'text_secondary': '#A3A3A3',  # neutral-400
-    'text_muted': '#737373',      # neutral-500
-    'text_dim': '#4A4A4A',
+    'bg_primary': '#090A0F',      # Main app background (Midnight Obsidian)
+    'bg_secondary': '#12141D',    # Row and card background
+    'bg_tertiary': '#181B26',     # Pill and card inner background
+    'bg_toolbar': '#131622',      # Header & titlebar
+    'bg_surface': '#1A1D2C',      # Modal / drawer background
+    'bg_hover': '#1E2235',        # Hover state
+    'bg_selected': '#282D46',     # Selected state
+    'bg_input': '#121520',        # Search & input background
+    'bg_button': '#202436',       # Normal button background
+    'bg_button_hover': '#2C324B',
+    'border': '#23273A',
+    'border_light': '#313752',
+    'slider_rail': '#262B40',
     
-    # Status Pill Backgrounds & Foregrounds (exact LRCGET badges)
-    'pill_synced_bg': '#0A3018',
-    'pill_synced_fg': '#4ADE80',
-    'pill_plain_bg': '#1E293B',
-    'pill_plain_fg': '#94A3B8',
-    'pill_missing_bg': '#3A1212',
-    'pill_missing_fg': '#F87171',
-    'pill_suspicious_bg': '#3A240E',
-    'pill_suspicious_fg': '#FBBF24',
+    # Creative Electric Violet & Cyber Cyan Accents
+    'accent': '#8B5CF6',          # Vibrant Electric Violet
+    'accent_hover': '#A78BFA',
+    'accent_active': '#7C3AED',
+    'accent_dark': '#5B21B6',
+    'accent_cyan': '#06B6D4',     # Cyber Cyan secondary accent
+    'accent_cyan_hover': '#22D3EE',
+    
+    'text_primary': '#FFFFFF',
+    'text_secondary': '#94A3B8',  # Slate-400
+    'text_muted': '#64748B',      # Slate-500
+    'text_dim': '#475569',
+    
+    # Status Pill Backgrounds & Foregrounds
+    'pill_synced_bg': '#064E3B',
+    'pill_synced_fg': '#34D399',  # Crisp Emerald Mint
+    'pill_plain_bg': '#0C4A6E',
+    'pill_plain_fg': '#38BDF8',  # Sky Blue
+    'pill_missing_bg': '#4C0519',
+    'pill_missing_fg': '#FB7185', # Coral Rose
+    'pill_suspicious_bg': '#451A03',
+    'pill_suspicious_fg': '#FBBF24', # Amber Gold
     
     # Utility colors
-    'success': '#4ADE80',
+    'success': '#34D399',
     'warning': '#FBBF24',
-    'error': '#F87171',
+    'error': '#FB7185',
     'info': '#38BDF8',
 }
 
 FONTS = {
-    'heading': ('Segoe UI', 16, 'bold'),
+    'heading': ('Segoe UI', 15, 'bold'),
     'subheading': ('Segoe UI', 13, 'bold'),
     'body': ('Segoe UI', 11),
     'body_bold': ('Segoe UI', 11, 'bold'),
@@ -50,7 +55,7 @@ FONTS = {
     'mono': ('Consolas', 10),
     'lyrics': ('Segoe UI', 15),
     'lyrics_active': ('Segoe UI', 17, 'bold'),
-    'tab': ('Segoe UI', 12, 'bold'),
+    'tab': ('Segoe UI', 11, 'bold'),
 }
 
 STATUS_COLORS = {
@@ -62,8 +67,8 @@ STATUS_COLORS = {
     'searching': '#38BDF8',
     'found_synced': COLORS['pill_synced_fg'],
     'found_plain': COLORS['pill_plain_fg'],
-    'not_found': '#737373',
-    'skipped': '#525252',
+    'not_found': '#64748B',
+    'skipped': '#475569',
     'rate_limited': '#FBBF24',
 }
 

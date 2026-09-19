@@ -75,7 +75,7 @@ class WaveformScrubber(ctk.CTkFrame):
         self.canvas.create_oval(
             knob_x - 4.0, mid_y - 7.0,
             knob_x + 4.0, mid_y + 7.0,
-            fill=COLORS['accent'],
+            fill=COLORS['accent_cyan'],
             outline="#FFFFFF",
             width=1
         )

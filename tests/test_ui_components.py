@@ -27,10 +27,10 @@ class TestUIWidgets(unittest.TestCase):
             pass
 
     def test_theme_colors(self):
-        self.assertEqual(COLORS["bg_primary"], "#0A0A0A")
-        self.assertEqual(COLORS["bg_surface"], "#141414")
-        self.assertEqual(COLORS["accent"], "#F35697")
-        self.assertEqual(COLORS["pill_synced_fg"], "#4ADE80")
+        self.assertEqual(COLORS["bg_primary"], "#090A0F")
+        self.assertEqual(COLORS["bg_surface"], "#1A1D2C")
+        self.assertEqual(COLORS["accent"], "#8B5CF6")
+        self.assertEqual(COLORS["pill_synced_fg"], "#34D399")
 
     def test_art_cache_placeholder(self):
         thumb = get_thumbnail("", size=(40, 40))
@@ -120,8 +120,19 @@ class TestUIWidgets(unittest.TestCase):
         ]
         alist.set_items(dummy_artists)
         self.assertEqual(len(alist.items), 40)
-        frame.destroy()
-
+    def test_logs_view(self):
+        from app.ui.views.logs_view import LogsView
+        from unittest.mock import MagicMock
+        mock_win = MagicMock()
+        mock_win.db.get_stats.return_value = {"missing": 5, "suspicious": 2, "synced": 20}
+        mock_win.db.get_tracks_by_status.return_value = [
+            {"title": "Track 1", "artist": "Artist 1", "audio_path": "C:/m1.mp3", "lrc_status": "missing"}
+        ]
+        logs = LogsView(self.root, app_window=mock_win)
+        self.assertIsNotNone(logs)
+        logs._switch_tab("Missing")
+        self.assertEqual(len(logs.cached_entries), 1)
+        logs.destroy()
 
 if __name__ == "__main__":
     unittest.main()

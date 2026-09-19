@@ -30,6 +30,8 @@ class TrackRow(ctk.CTkFrame):
         on_play: Optional[Callable] = None,
         on_search: Optional[Callable] = None,
         on_click: Optional[Callable] = None,
+        show_cover: bool = True,
+        track_index: Optional[int] = None,
         **kwargs
     ):
         super().__init__(
@@ -45,10 +47,25 @@ class TrackRow(ctk.CTkFrame):
         self.on_play = on_play
         self.on_search = on_search
         self.on_click = on_click
+        self.show_cover = show_cover
+        self.track_index = track_index
         
-        # 1. Artwork Thumbnail
-        self.thumb_lbl = ctk.CTkLabel(self, text="", width=40, height=40)
-        self.thumb_lbl.pack(side="left", padx=(10, 10), pady=8)
+        # 1. Artwork Thumbnail or Track Index
+        if self.show_cover:
+            self.thumb_lbl = ctk.CTkLabel(self, text="", width=40, height=40)
+            self.thumb_lbl.pack(side="left", padx=(10, 10), pady=8)
+            self.idx_lbl = None
+        else:
+            self.thumb_lbl = None
+            idx_str = f"{track_index:02d}" if track_index is not None else "  "
+            self.idx_lbl = ctk.CTkLabel(
+                self, 
+                text=idx_str, 
+                width=32, 
+                font=FONTS['mono'], 
+                text_color=COLORS['text_muted']
+            )
+            self.idx_lbl.pack(side="left", padx=(14, 6), pady=8)
         
         # 2. Details (Title in bold, Artist • Album in muted)
         self.info_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -138,19 +155,28 @@ class TrackRow(ctk.CTkFrame):
         self.bind("<Button-1>", lambda e: self._trigger_play())
         self.bind("<Button-3>", lambda e: self._show_context_menu(e))
         
-        for widget in (self.thumb_lbl, self.info_frame, self.title_lbl, self.subtitle_lbl, self.duration_lbl):
+        interactive_widgets = [self.info_frame, self.title_lbl, self.subtitle_lbl, self.duration_lbl]
+        if self.thumb_lbl:
+            interactive_widgets.append(self.thumb_lbl)
+        if self.idx_lbl:
+            interactive_widgets.append(self.idx_lbl)
+
+        for widget in interactive_widgets:
             widget.bind("<Enter>", self._on_enter)
             widget.bind("<Leave>", self._on_leave)
             widget.bind("<Button-1>", lambda e: self._trigger_play())
             widget.bind("<Button-3>", lambda e: self._show_context_menu(e))
 
-
         if track_data:
             self.update_data(track_data)
 
-    def update_data(self, track_data: Any):
+    def update_data(self, track_data: Any, track_index: Optional[int] = None):
         """Recycle row with new data without destroying widgets."""
         self.track_data = track_data
+        if track_index is not None:
+            self.track_index = track_index
+            if self.idx_lbl:
+                self.idx_lbl.configure(text=f"{track_index:02d}")
         
         # Title
         title = _get_val(track_data, 'title')
@@ -182,7 +208,8 @@ class TrackRow(ctk.CTkFrame):
         self.pill_lbl.configure(text=status_clean, text_color=fg_col)
         
         # Thumbnail (extracted asynchronously in background thread)
-        load_thumbnail_async(audio_path, size=(40, 40), target_widget=self.thumb_lbl)
+        if self.show_cover and self.thumb_lbl:
+            load_thumbnail_async(audio_path, size=(40, 40), target_widget=self.thumb_lbl)
 
 
     def _trigger_play(self):

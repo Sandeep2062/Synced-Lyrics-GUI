@@ -1,6 +1,7 @@
 """Settings view with custom API configuration, engines manager, directories, and auto-updater."""
 import os
 import threading
+import webbrowser
 import tkinter.filedialog as filedialog
 import customtkinter as ctk
 from typing import Any
@@ -207,17 +208,62 @@ class SettingsView(ctk.CTkScrollableFrame):
         )
         self.update_btn.pack(side="right", padx=14, pady=12)
         
-        # 6. About Section
-        self.create_section_header("ℹ️ About")
+        # 6. About & Project Links Section
+        self.create_section_header("ℹ️ About & Community")
         self.about_frame = ctk.CTkFrame(self, fg_color=COLORS['bg_secondary'], corner_radius=6)
-        self.about_frame.pack(fill="x", padx=10, pady=(0, 20))
+        self.about_frame.pack(fill="x", padx=10, pady=(0, 24))
         
         about_text = (
-            f"Synced Lyrics GUI v{APP_VERSION}\n"
-            "An autonomous multi-provider lyrics manager and music player for local libraries.\n"
-            "Supports LRCLib, Musixmatch, NetEase, Megalobiz, and Genius."
+            f"Synced Lyrics GUI  •  Version {APP_VERSION}\n"
+            "High-performance lyrics manager and local music player.\n"
+            "Autonomous fetching across LRCLib, Musixmatch, NetEase, Megalobiz, and Genius."
         )
-        ctk.CTkLabel(self.about_frame, text=about_text, font=FONTS['body'], justify="left").pack(padx=14, pady=(12, 6), anchor="w")
+        ctk.CTkLabel(self.about_frame, text=about_text, font=FONTS['body'], justify="left").pack(padx=14, pady=(12, 10), anchor="w")
+        
+        links_row = ctk.CTkFrame(self.about_frame, fg_color="transparent")
+        links_row.pack(fill="x", padx=14, pady=(0, 14), anchor="w")
+        
+        self.gh_repo_btn = ctk.CTkButton(
+            links_row,
+            text="⭐ GitHub Repository",
+            font=FONTS['small_bold'],
+            fg_color=COLORS['bg_button'],
+            hover_color=COLORS['bg_button_hover'],
+            text_color=COLORS['text_primary'],
+            border_width=1,
+            border_color=COLORS['border'],
+            height=30,
+            command=lambda: webbrowser.open("https://github.com/Sandeep2062/Synced-Lyrics-GUI")
+        )
+        self.gh_repo_btn.pack(side="left", padx=(0, 8))
+        
+        self.gh_releases_btn = ctk.CTkButton(
+            links_row,
+            text="📦 Releases & Changelog",
+            font=FONTS['small_bold'],
+            fg_color=COLORS['bg_button'],
+            hover_color=COLORS['bg_button_hover'],
+            text_color=COLORS['text_primary'],
+            border_width=1,
+            border_color=COLORS['border'],
+            height=30,
+            command=lambda: webbrowser.open("https://github.com/Sandeep2062/Synced-Lyrics-GUI/releases")
+        )
+        self.gh_releases_btn.pack(side="left", padx=(0, 8))
+
+        self.gh_issues_btn = ctk.CTkButton(
+            links_row,
+            text="🐛 Report an Issue",
+            font=FONTS['small_bold'],
+            fg_color=COLORS['bg_button'],
+            hover_color=COLORS['bg_button_hover'],
+            text_color=COLORS['text_primary'],
+            border_width=1,
+            border_color=COLORS['border'],
+            height=30,
+            command=lambda: webbrowser.open("https://github.com/Sandeep2062/Synced-Lyrics-GUI/issues")
+        )
+        self.gh_issues_btn.pack(side="left")
         
         # Refresh UI elements
         self._refresh_directories_list()
