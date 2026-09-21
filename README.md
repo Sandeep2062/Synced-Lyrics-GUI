@@ -55,7 +55,7 @@ Zero webview, zero electron/browser overhead, zero Python dependencies — pure 
 
 - [Rust](https://rustup.rs/) (stable toolchain)
 - **Windows**: Visual Studio C++ Build Tools
-- **Linux**: ALSA development libraries (`sudo apt-get install libasound2-dev`)
+- **Linux**: ALSA and fontconfig development libraries (`sudo apt-get install libasound2-dev libfontconfig1-dev pkg-config`)
 - **macOS**: Xcode Command Line Tools
 
 ### Running from Source

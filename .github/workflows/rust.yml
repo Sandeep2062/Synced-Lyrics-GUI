@@ -23,9 +23,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Linux audio dependencies
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libfontconfig1-dev pkg-config libxkbcommon-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -60,7 +60,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
-        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev file
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libfontconfig1-dev pkg-config libxkbcommon-dev file
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

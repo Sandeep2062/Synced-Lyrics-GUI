@@ -72,7 +72,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Maintainer: Synced Lyrics GUI contributors <https://github.com/Sandeep2062/Synced-Lyrics-GUI>
-Depends: libc6, libasound2
+Depends: libc6, libasound2, libfontconfig1
 Description: Blazing-fast desktop application for synchronized LRC lyrics
  A lightweight, high-performance native Slint/Rust desktop application for
  managing, searching, and downloading synchronized and plain-text lyrics for
