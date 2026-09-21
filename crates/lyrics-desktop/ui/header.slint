@@ -1,0 +1,151 @@
+import { Theme } from "theme.slint";
+import { IconButton, ToolbarButton } from "components.slint";
+
+export component AppHeader inherits Rectangle {
+    height: Theme.header-height;
+    background: Theme.bg-toolbar;
+
+    in-out property <int> active-tab: 0;
+    in property <bool> is-refreshing: false;
+    in property <float> refresh-progress: 0.0;
+    in property <string> refresh-text: "Refresh Directory";
+    in property <bool> is-batch-running: false;
+    in property <float> batch-progress: 0.0;
+    in property <string> batch-progress-text: "";
+    private property <[string]> tabs: ["Tracks", "Albums", "Artists", "Settings"];
+    private property <length> tab-width: 96px;
+    private property <length> tab-gap: 6px;
+    private property <length> edge: Theme.spacing-lg;
+    private property <length> tabs-width:
+        root.tabs.length * (root.tab-width + root.tab-gap) - root.tab-gap;
+
+    callback tab-changed(int);
+    callback manage-directories();
+    callback refresh();
+    callback download-all();
+
+    // Bottom border divider
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.divider;
+    }
+
+    // Left: Logo + App Title (width follows its content)
+    HorizontalLayout {
+        x: root.edge;
+        y: 0;
+        width: self.preferred-width;
+        height: 100%;
+        alignment: start;
+        spacing: 11px;
+
+        Image {
+            source: @image-url("../assets/icon.png");
+            width: 26px;
+            height: 26px;
+            y: (parent.height - self.height) / 2;
+        }
+
+        Text {
+            text: "SYNCED LYRICS";
+            color: Theme.text-primary;
+            font-size: 15px;
+            font-weight: 800;
+            vertical-alignment: center;
+            letter-spacing: 1.1px;
+        }
+    }
+
+    // Center: Nav Tabs with a single sliding indicator
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.tabs-width;
+        height: 38px;
+        background: transparent;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: root.tab-gap;
+
+            for tab[i] in root.tabs: Rectangle {
+                width: root.tab-width;
+                height: 36px;
+                border-radius: Theme.radius-sm;
+                background: root.active-tab == i
+                    ? #000000
+                    : (tab_ta.pressed ? Theme.bg-active : (tab_ta.has-hover ? #101218 : transparent));
+                border-width: 1px;
+                border-color: root.active-tab == i ? #2A2745 : transparent;
+
+                animate background, border-color { duration: Theme.motion-base; easing: ease-out; }
+
+                Text {
+                    text: tab;
+                    color: root.active-tab == i
+                        ? Theme.text-primary
+                        : (tab_ta.has-hover ? #D0D6E2 : Theme.text-muted);
+                    font-size: 13px;
+                    font-weight: root.active-tab == i ? 700 : 500;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    animate color { duration: Theme.motion-base; easing: ease-out; }
+                }
+
+                tab_ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.tab-changed(i); }
+                }
+            }
+        }
+
+        // Sliding active indicator. Deliberately a flat bar: a blurred drop
+        // shadow here is re-computed on every repaint, and the player already
+        // repaints the window ~30 times a second while a song is playing.
+        Rectangle {
+            x: root.active-tab * (root.tab-width + root.tab-gap) + (root.tab-width - self.width) / 2;
+            y: parent.height - 3px;
+            width: root.tab-width - 40px;
+            height: 3px;
+            border-radius: 1.5px;
+            background: Theme.accent-violet;
+            animate x, width { duration: 260ms; easing: ease-in-out; }
+        }
+    }
+
+    // Right: Action Buttons (anchored to the far edge)
+    HorizontalLayout {
+        x: parent.width - self.width - 16px;
+        y: 0;
+        width: self.preferred-width;
+        height: 100%;
+        spacing: 6px;
+        alignment: end;
+
+        ToolbarButton {
+            icon: @image-url("../assets/folder_add.svg");
+            label: "Manage Directories";
+            clicked => { root.manage-directories(); }
+        }
+
+        ToolbarButton {
+            icon: @image-url("../assets/download.svg");
+            label: root.is-batch-running
+                ? (root.batch-progress-text != "" ? ("Downloading (" + Math.round(root.batch-progress * 100) + "%)") : "Downloading...")
+                : "Download";
+            accent: true;
+            in-progress: root.is-batch-running;
+            progress: root.batch-progress;
+            clicked => { root.download-all(); }
+        }
+
+        ToolbarButton {
+            icon: @image-url("../assets/refresh.svg");
+            label: root.refresh-text;
+            in-progress: root.is-refreshing;
+            progress: root.refresh-progress;
+            clicked => { root.refresh(); }
+        }
+    }
+}

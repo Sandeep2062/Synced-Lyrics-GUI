@@ -1,0 +1,100 @@
+import { Theme } from "theme.slint";
+import { ListView, LineEdit } from "std-widgets.slint";
+
+export struct LogEntry {
+    status: string,
+    track-info: string,
+    details: string,
+}
+
+export component LogsView inherits Rectangle {
+    in-out property <[LogEntry]> logs: [];
+    in-out property <int> missing-count: 0;
+    in-out property <int> suspicious-count: 0;
+    in-out property <int> synced-count: 0;
+    in-out property <int> total-count: 0;
+    in-out property <int> active-subtab: 0;
+    
+    callback export-logs();
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        // Metrics Cards
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            height: 80px;
+
+            Rectangle {
+                background: Theme.bg-card; border-radius: Theme.radius-md;
+                VerticalLayout { alignment: center; Text { text: root.missing-count; color: Theme.status-missing; font-size: 22px; font-weight: 700; horizontal-alignment: center; } Text { text: "Missing"; color: Theme.text-muted; font-size: 11px; horizontal-alignment: center; } }
+            }
+            Rectangle {
+                background: Theme.bg-card; border-radius: Theme.radius-md;
+                VerticalLayout { alignment: center; Text { text: root.suspicious-count; color: Theme.status-suspicious; font-size: 22px; font-weight: 700; horizontal-alignment: center; } Text { text: "Suspicious"; color: Theme.text-muted; font-size: 11px; horizontal-alignment: center; } }
+            }
+            Rectangle {
+                background: Theme.bg-card; border-radius: Theme.radius-md;
+                VerticalLayout { alignment: center; Text { text: root.synced-count; color: Theme.status-synced; font-size: 22px; font-weight: 700; horizontal-alignment: center; } Text { text: "Synced"; color: Theme.text-muted; font-size: 11px; horizontal-alignment: center; } }
+            }
+            Rectangle {
+                background: Theme.bg-card; border-radius: Theme.radius-md;
+                VerticalLayout { alignment: center; Text { text: root.total-count; color: Theme.text-primary; font-size: 22px; font-weight: 700; horizontal-alignment: center; } Text { text: "Total"; color: Theme.text-muted; font-size: 11px; horizontal-alignment: center; } }
+            }
+        }
+
+        // Subtabs & Search
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            height: 32px;
+            
+            HorizontalLayout {
+                spacing: 8px;
+                for tab[i] in ["Missing", "Suspicious", "History", "Rejected"]: Rectangle {
+                    border-radius: 4px;
+                    background: root.active-subtab == i ? Theme.bg-card : transparent;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        alignment: center;
+                        Text { text: tab; color: root.active-subtab == i ? Theme.text-primary : Theme.text-muted; font-size: 13px; vertical-alignment: center; }
+                    }
+                    TouchArea { clicked => { root.active-subtab = i; } }
+                }
+            }
+
+            Rectangle { width: 1px; background: transparent; horizontal-stretch: 1; }
+
+            LineEdit { width: 200px; placeholder-text: "Search logs..."; }
+
+            Rectangle {
+                width: 100px;
+                background: Theme.bg-card; border-radius: Theme.radius-sm;
+                Text { text: "💾 Export"; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { clicked => { root.export-logs(); } }
+            }
+        }
+
+        // Log List
+        ListView {
+            for log in root.logs: Rectangle {
+                height: 40px;
+                border-radius: Theme.radius-sm;
+                background: ta.has-hover ? Theme.bg-card : transparent;
+                HorizontalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: Theme.spacing-md;
+                    Rectangle {
+                        width: 80px; height: 20px; border-radius: 10px; y: 10px;
+                        background: log.status == "Error" ? Theme.status-missing : Theme.bg-card;
+                        Text { text: log.status; color: #FFFFFF; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    Text { text: log.track-info; color: Theme.text-primary; font-size: 13px; vertical-alignment: center; }
+                    Text { text: log.details; color: Theme.text-muted; font-size: 12px; vertical-alignment: center; }
+                }
+                ta := TouchArea {}
+            }
+        }
+    }
+}

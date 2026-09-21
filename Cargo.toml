@@ -1,0 +1,57 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lyrics-core",
+    "crates/lyrics-desktop",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Synced Lyrics GUI contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+# The formats album art actually turns up in. WebP in particular is what a lot
+# of downloaded artwork uses, and a cover that cannot be decoded is a cover the
+# user sees as a placeholder.
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "webp",
+    "gif",
+    "bmp",
+    "tiff",
+] }
+keyring = "3"
+lofty = "0.22"
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+rodio = { version = "0.20", default-features = false, features = ["symphonia-all"] }
+rfd = "0.15"
+scraper = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Same feature set rodio's `symphonia-all` enables, so decoding behaviour is
+# unchanged; we only need the API directly to open files ourselves.
+symphonia = { version = "0.5", default-features = false, features = [
+    "aac",
+    "adpcm",
+    "flac",
+    "isomp4",
+    "mp3",
+    "pcm",
+    "vorbis",
+    "wav",
+] }
+slint = "1.9"
+thiserror = "2"
+tracing = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,25 @@
+[package]
+name = "lyrics-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+image.workspace = true
+lofty.workspace = true
+lyrics-core = { path = "../lyrics-core" }
+# Only used to ask GitHub for the latest release tag ("Check for Updates").
+reqwest.workspace = true
+rfd.workspace = true
+serde_json.workspace = true
+rodio.workspace = true
+slint.workspace = true
+symphonia.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+slint-build = "1.9"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

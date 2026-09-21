@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Synced Lyrics
+GenericName=Lyrics Manager & Player
+Comment=Manage and download synchronized LRC lyrics for local music libraries
+Exec=synced-lyrics %F
+Icon=synced-lyrics
+Terminal=false
+Categories=AudioVideo;Audio;Player;Music;
+StartupWMClass=lyrics-desktop
+Keywords=lyrics;lrc;music;karaoke;sync;
+MimeType=audio/flac;audio/mpeg;audio/mp4;audio/ogg;audio/x-wav;

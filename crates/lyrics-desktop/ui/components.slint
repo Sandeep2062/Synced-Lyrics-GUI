@@ -1,0 +1,551 @@
+import { Theme } from "theme.slint";
+
+// Shared building blocks.
+//
+// Layout note: Slint aligns fixed-size items to the *start* of a layout's cross
+// axis (a 22px pill in a 54px row would sit at the top). Every component here is
+// therefore a transparent, stretching wrapper with its visible part centred by an
+// inner layout, so call sites never have to do alignment arithmetic.
+
+// ---------------------------------------------------------------------------
+// IconButton — round, tinted, smoothly animated icon control.
+// ---------------------------------------------------------------------------
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> button-size: 28px;
+    in property <length> icon-size: 14px;
+    in property <color> idle-tint: transparent;
+    in property <color> hover-tint: Theme.bg-hover;
+    in property <color> idle-border: Theme.stroke-soft;
+    in property <color> hover-border: Theme.stroke-strong;
+    in property <color> icon-color: Theme.text-muted;
+    in property <color> icon-hover-color: Theme.text-primary;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: root.button-size;
+    vertical-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            width: 100%;
+            alignment: center;
+
+            Rectangle {
+                width: root.button-size;
+                height: root.button-size;
+                border-radius: root.button-size / 2;
+                opacity: root.enabled ? 1 : 0.45;
+                background: ta.pressed ? Theme.bg-active : (ta.has-hover ? root.hover-tint : root.idle-tint);
+                border-width: 1px;
+                border-color: root.enabled && ta.has-hover ? root.hover-border : root.idle-border;
+
+                animate opacity, background, border-color {
+                    duration: Theme.motion-fast;
+                    easing: ease-out;
+                }
+
+                Image {
+                    source: root.icon;
+                    width: root.icon-size;
+                    height: root.icon-size;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    colorize: !root.enabled ? Theme.text-dim
+                        : (ta.has-hover ? root.icon-hover-color : root.icon-color);
+                    animate colorize { duration: Theme.motion-fast; easing: ease-out; }
+                }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        width: root.button-size;
+        height: root.button-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CoverTile — artwork placeholder tile used across every view.
+// ---------------------------------------------------------------------------
+export component CoverTile inherits Rectangle {
+    in property <image> cover;
+    in property <bool> has-cover: false;
+    in property <length> tile-size: 36px;
+    in property <length> icon-size: 18px;
+    in property <length> tile-radius: Theme.radius-sm;
+
+    width: root.tile-size;
+    vertical-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            width: 100%;
+            alignment: center;
+
+            Rectangle {
+                width: root.tile-size;
+                height: root.tile-size;
+                border-radius: root.tile-radius;
+                background: Theme.bg-elevated;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+                clip: true;
+
+                if root.has-cover: Image {
+                    source: root.cover;
+                    width: 100%;
+                    height: 100%;
+                }
+
+                if !root.has-cover: Image {
+                    source: @image-url("../assets/music_note.svg");
+                    width: root.icon-size;
+                    height: root.icon-size;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    colorize: Theme.text-muted;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// StatusPill — lyrics status badge, shared by the track list and lyrics panel.
+// ---------------------------------------------------------------------------
+export component StatusPill inherits Rectangle {
+    in property <string> status: "missing";
+    in property <length> pill-width: 92px;
+    in property <length> column-width: 92px;
+
+    width: root.column-width;
+    vertical-stretch: 1;
+    background: transparent;
+
+    private property <color> tone:
+        root.status == "synced" ? Theme.status-synced :
+        root.status == "plain" ? Theme.status-plain :
+        root.status == "missing" ? Theme.status-missing :
+        root.status == "suspicious" ? Theme.status-suspicious : Theme.text-dim;
+
+    private property <string> label:
+        root.status == "synced" ? "SYNCED" :
+        root.status == "plain" ? "PLAIN" :
+        root.status == "missing" ? "MISSING" :
+        root.status == "suspicious" ? "AUDIT" : root.status;
+
+    // Missing lyrics get a hollow marker instead of a filled dot.
+    private property <bool> ring: root.status == "missing";
+
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            width: 100%;
+            alignment: center;
+
+            Rectangle {
+                width: root.pill-width;
+                height: 22px;
+                border-radius: 11px;
+                border-width: 1px;
+                border-color: root.tone;
+                background:
+                    root.status == "synced" ? #0D281E :
+                    root.status == "plain" ? #0C2333 :
+                    root.status == "missing" ? #2B1117 :
+                    root.status == "suspicious" ? #2B210C : #1A1D24;
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 5px;
+
+                    // A fixed-size child of a layout is start-aligned, so an
+                    // explicit `y` is what actually centres it on the pill.
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: root.ring ? transparent : root.tone;
+                        border-width: root.ring ? 1px : 0px;
+                        border-color: root.tone;
+                    }
+
+                    Text {
+                        text: root.label;
+                        color: root.tone;
+                        font-size: 9px;
+                        font-weight: 700;
+                        letter-spacing: 0.4px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FilterChip — one option of a segmented filter.
+// ---------------------------------------------------------------------------
+export component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    in property <int> count: -1;
+    callback clicked();
+
+    vertical-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+
+        Rectangle {
+            height: 26px;
+            border-radius: 13px;
+            border-width: 1px;
+            background: root.selected
+                ? Theme.accent-violet-soft
+                : (ta.pressed ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : #000000));
+            border-color: root.selected
+                ? Theme.accent-violet
+                : (ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft);
+
+            animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+            HorizontalLayout {
+                padding-left: 11px;
+                padding-right: 11px;
+                alignment: center;
+                spacing: 6px;
+
+                Text {
+                    text: root.label;
+                    color: root.selected ? Theme.text-primary : Theme.text-muted;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    animate color { duration: Theme.motion-fast; easing: ease-out; }
+                }
+
+                if root.count >= 0: Text {
+                    text: root.count;
+                    color: root.selected ? Theme.accent-violet : Theme.text-dim;
+                    font-size: 10px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ToggleSwitch — clean modern sliding toggle switch.
+// ---------------------------------------------------------------------------
+export component ToggleSwitch inherits Rectangle {
+    in-out property <bool> checked: false;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+
+    width: 44px;
+    height: 24px;
+    background: transparent;
+
+    Rectangle {
+        width: 44px;
+        height: 24px;
+        border-radius: 12px;
+        background: !root.enabled
+            ? #1E222D
+            : (root.checked ? #10B981 : (ta.has-hover ? #2F3547 : #1D212D));
+        border-width: 1px;
+        border-color: !root.enabled
+            ? Theme.stroke-soft
+            : (root.checked ? #34D399 : (ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft));
+
+        animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+        Rectangle {
+            x: root.checked ? 22px : 2px;
+            y: 2px;
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            background: #FFFFFF;
+            drop-shadow-blur: 4px;
+            drop-shadow-color: #00000080;
+            drop-shadow-offset-y: 1px;
+
+            animate x { duration: Theme.motion-fast; easing: ease-out; }
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TextField — themed single-line input.
+//
+// Built from the TextInput primitive instead of the std-widgets LineEdit, whose
+// chrome follows the OS colour scheme (light grey boxes on a pure black app).
+// ---------------------------------------------------------------------------
+export component TextField inherits Rectangle {
+    in-out property <string> text: "";
+    in property <string> placeholder: "";
+    in property <bool> password: false;
+    in property <bool> with-search-icon: false;
+    out property <bool> has-focus: input.has-focus;
+    callback edited(string);
+
+    height: 34px;
+    border-radius: Theme.radius-sm;
+    background: input.has-focus ? #0A0C11 : #000000;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent-violet : Theme.stroke-soft;
+
+    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+    private property <length> left-inset: root.with-search-icon ? 36px : 12px;
+    private property <length> right-inset: root.text == "" ? 12px : 32px;
+
+    if root.with-search-icon: Image {
+        source: @image-url("../assets/search.svg");
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        width: 15px;
+        height: 15px;
+        colorize: input.has-focus ? Theme.text-muted : Theme.text-dim;
+    }
+
+    // Placeholder sits under the input so the caret is drawn on top of it.
+    Text {
+        x: root.left-inset;
+        width: parent.width - root.left-inset - root.right-inset;
+        height: 100%;
+        text: root.text == "" ? root.placeholder : "";
+        color: Theme.text-dim;
+        font-size: 12px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    input := TextInput {
+        x: root.left-inset;
+        width: max(1px, parent.width - root.left-inset - root.right-inset);
+        height: 100%;
+        single-line: true;
+        text <=> root.text;
+        color: Theme.text-primary;
+        font-size: 12px;
+        vertical-alignment: center;
+        input-type: root.password ? InputType.password : InputType.text;
+        selection-background-color: Theme.accent-violet;
+        selection-foreground-color: #FFFFFF;
+        edited => { root.edited(input.text); }
+    }
+
+    // Clear affordance
+    if root.text != "": IconButton {
+        icon: @image-url("../assets/close.svg");
+        button-size: 20px;
+        icon-size: 11px;
+        idle-tint: transparent;
+        hover-tint: Theme.bg-hover;
+        idle-border: transparent;
+        hover-border: Theme.stroke-soft;
+        icon-color: Theme.text-dim;
+        x: parent.width - 28px;
+        y: (parent.height - self.height) / 2;
+        clicked => {
+            root.text = "";
+            root.edited("");
+        }
+    }
+
+}
+
+// ---------------------------------------------------------------------------
+// ToolbarButton — labelled toolbar action (Add Folder, Download All).
+// ---------------------------------------------------------------------------
+export component ToolbarButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> accent: false;
+    in property <bool> in-progress: false;
+    in property <float> progress: 0.0;
+    callback clicked();
+
+    vertical-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+
+        Rectangle {
+            height: 34px;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            clip: true;
+            background: root.accent
+                ? (ta.pressed ? #2C1A4A : (ta.has-hover ? #28163F : #1A1229))
+                : (ta.pressed ? Theme.bg-active : (ta.has-hover ? #12141C : #000000));
+            border-color: root.in-progress
+                ? Theme.accent-violet
+                : (root.accent
+                    ? (ta.has-hover ? #6D3FB8 : #3C2266)
+                    : (ta.has-hover ? Theme.stroke-strong : #222636));
+
+            animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+            // Progress bar fill inside the button
+            if root.in-progress: Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * Math.min(1.0, Math.max(0.0, root.progress));
+                height: 100%;
+                background: root.accent ? #3D1C68 : #201738;
+                opacity: 0.85;
+
+                animate width { duration: Theme.motion-fast; easing: ease-out; }
+            }
+
+            HorizontalLayout {
+                padding-left: 9px;
+                padding-right: 9px;
+                alignment: center;
+                spacing: 5px;
+
+                Image {
+                    source: root.icon;
+                    y: (parent.height - self.height) / 2;
+                    width: 16px;
+                    height: 16px;
+                    colorize: root.in-progress
+                        ? Theme.accent-violet
+                        : (root.accent ? #E2D7FF : Theme.text-primary);
+                }
+
+                Text {
+                    text: root.label;
+                    color: root.in-progress
+                        ? #F4F7FB
+                        : (root.accent ? #E2D7FF : Theme.text-primary);
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        enabled: !root.in-progress;
+        mouse-cursor: !root.in-progress ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VolumeSlider — custom slider so the mixer matches the violet theme
+// (the built-in widget is locked to the platform accent colour).
+// ---------------------------------------------------------------------------
+export component VolumeSlider inherits Rectangle {
+    in-out property <float> value: 0.7;
+    in property <float> minimum: 0.0;
+    in property <float> maximum: 1.0;
+    callback changed(float);
+
+    height: 20px;
+    vertical-stretch: 1;
+    background: transparent;
+
+    private property <float> ratio:
+        clamp((root.value - root.minimum) / max(0.0001, root.maximum - root.minimum), 0.0, 1.0);
+
+    function set-from-x(x: length) {
+        root.value = clamp(
+            root.minimum + (x / max(1px, track.width)) * (root.maximum - root.minimum),
+            root.minimum,
+            root.maximum
+        );
+        root.changed(root.value);
+    }
+
+    VerticalLayout {
+        alignment: center;
+
+        track := Rectangle {
+            height: 20px;
+            width: 100%;
+            background: transparent;
+
+            private property <length> knob-size: ta.pressed || ta.has-hover ? 13px : 10px;
+
+            // rail
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 100%;
+                height: 4px;
+                border-radius: 2px;
+                background: Theme.track-idle;
+            }
+
+            // filled portion
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: max(0px, parent.width * root.ratio);
+                height: 4px;
+                border-radius: 2px;
+                background: ta.has-hover || ta.pressed ? Theme.accent-violet-strong : Theme.accent-violet;
+                animate width, background { duration: Theme.motion-fast; easing: ease-out; }
+            }
+
+            // knob
+            Rectangle {
+                x: clamp(parent.width * root.ratio - self.width / 2, 0px, parent.width - self.width);
+                y: (parent.height - self.height) / 2;
+                width: track.knob-size;
+                height: track.knob-size;
+                border-radius: track.knob-size / 2;
+                background: #FFFFFF;
+                animate x, width, height { duration: Theme.motion-fast; easing: ease-out; }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        width: 100%;
+        height: 20px;
+        y: (parent.height - self.height) / 2;
+        mouse-cursor: pointer;
+        clicked => { root.set-from-x(self.mouse-x); }
+        moved => {
+            if (self.pressed) {
+                root.set-from-x(self.mouse-x);
+            }
+        }
+    }
+}

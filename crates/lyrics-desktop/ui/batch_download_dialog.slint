@@ -1,0 +1,943 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+import { IconButton } from "components.slint";
+
+export struct BatchLogEntry {
+    timestamp: string,
+    track-title: string,
+    track-artist: string,
+    details: string,
+    action-text: string,
+    badge-text: string,
+    badge-type: string, // "synced", "plain", "missing", "error", "scan", "info"
+}
+
+export struct BatchStats {
+    total: int,
+    processed: int,
+    remaining: int,
+    synced: int,
+    plain: int,
+    not-found: int,
+    errors: int,
+}
+
+export component BatchDownloadDialog inherits Rectangle {
+    // Stage: 0 = Choose options, 1 = Live progress & platform log
+    in-out property <int> stage: 0;
+
+    // Counts for options stage
+    in property <int> total-count: 0;
+    in property <int> missing-count: 0;
+    in property <int> plain-count: 0;
+    in property <int> suspicious-count: 0;
+
+    // Progress stage properties
+    in property <string> mode-title: "";
+    in property <string> phase-text: "Preparing...";
+    in property <string> current-track: "";
+    in property <string> live-status: "";
+    in property <string> live-provider: "";
+    in property <float> progress: 0.0;
+    in property <string> progress-text: "0/0";
+    in property <BatchStats> stats: { total: 0, processed: 0, remaining: 0, synced: 0, plain: 0, not-found: 0, errors: 0 };
+    in property <[BatchLogEntry]> logs: [];
+    in property <bool> is-running: false;
+    in property <bool> is-paused: false;
+    in property <bool> is-finished: false;
+
+    callback close();
+    callback start-mode(int); // 0 = Replace All, 1 = Missing Only, 2 = Upgrade Plain, 3 = Fix Suspicious
+    callback pause-resume();
+    callback stop();
+
+    background: #000000E6;
+
+    // Swallow clicks outside card so background window cannot be interacted with
+    TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    card := Rectangle {
+        width: min(720px, parent.width - 32px);
+        height: min(560px, parent.height - 32px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: #06070A;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.stroke-strong;
+
+        // ====================================================================
+        // STAGE 0: Mode Selection
+        // ====================================================================
+        if root.stage == 0: VerticalLayout {
+            padding: 22px;
+            spacing: 14px;
+
+            // Header
+            HorizontalLayout {
+                height: 38px;
+                spacing: 12px;
+
+                Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 19px;
+                    background: #1B132E;
+                    border-width: 1px;
+                    border-color: #4C2B82;
+                    y: (parent.height - self.height) / 2;
+
+                    Image {
+                        source: @image-url("../assets/download.svg");
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        colorize: Theme.accent-violet;
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: "Batch Download Lyrics";
+                        color: Theme.text-primary;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Choose which songs in your music library to search and download lyrics for:";
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                    }
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/close.svg");
+                    icon-size: 14px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: #FF4D6D;
+                    hover-border: #E11D48;
+                    clicked => { root.close(); }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            // Options List
+            VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 10px;
+
+                // Option 0: Whole Directory (Redownload & Replace)
+                Rectangle {
+                    height: 74px;
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: opt0_ta.has-hover ? Theme.accent-violet : Theme.stroke-soft;
+                    background: opt0_ta.pressed ? #1E1535 : (opt0_ta.has-hover ? #110D1E : #0B0E14);
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    opt0_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.start-mode(0); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+
+                        Rectangle {
+                            width: 40px;
+                            height: 40px;
+                            border-radius: 20px;
+                            background: #24163E;
+                            border-width: 1px;
+                            border-color: #5B3598;
+                            y: (parent.height - self.height) / 2;
+
+                            Image {
+                                source: @image-url("../assets/download.svg");
+                                width: 18px;
+                                height: 18px;
+                                colorize: Theme.accent-violet;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+
+                            Text {
+                                text: "Redownload for Whole Directory";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "Search and re-download lyrics for all tracks, overwriting and replacing existing lyrics.";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 26px;
+                            border-radius: 13px;
+                            background: #221B3D;
+                            border-width: 1px;
+                            border-color: #4C3278;
+                            y: (parent.height - self.height) / 2;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: root.total-count + " total";
+                                    color: Theme.accent-violet;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Option 1: Missing Only
+                Rectangle {
+                    height: 74px;
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: opt1_ta.has-hover ? Theme.status-missing : Theme.stroke-soft;
+                    background: opt1_ta.pressed ? #2A1017 : (opt1_ta.has-hover ? #170A0F : #0B0E14);
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    opt1_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.start-mode(1); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+
+                        Rectangle {
+                            width: 40px;
+                            height: 40px;
+                            border-radius: 20px;
+                            background: #32121A;
+                            border-width: 1px;
+                            border-color: #6C2232;
+                            y: (parent.height - self.height) / 2;
+
+                            Image {
+                                source: @image-url("../assets/close.svg");
+                                width: 16px;
+                                height: 16px;
+                                colorize: Theme.status-missing;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+
+                            Text {
+                                text: "Download Only for Missing";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "Search and download lyrics only for tracks that currently have no lyrics at all.";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 26px;
+                            border-radius: 13px;
+                            background: #2B1117;
+                            border-width: 1px;
+                            border-color: #6C2232;
+                            y: (parent.height - self.height) / 2;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: root.missing-count + " missing";
+                                    color: Theme.status-missing;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Option 2: Plain Only (Upgrade to Synced)
+                Rectangle {
+                    height: 74px;
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: opt2_ta.has-hover ? Theme.status-plain : Theme.stroke-soft;
+                    background: opt2_ta.pressed ? #0E2433 : (opt2_ta.has-hover ? #091722 : #0B0E14);
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    opt2_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.start-mode(2); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+
+                        Rectangle {
+                            width: 40px;
+                            height: 40px;
+                            border-radius: 20px;
+                            background: #0D2636;
+                            border-width: 1px;
+                            border-color: #1E4E6E;
+                            y: (parent.height - self.height) / 2;
+
+                            Image {
+                                source: @image-url("../assets/lyrics_icon.svg");
+                                width: 18px;
+                                height: 18px;
+                                colorize: Theme.status-plain;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+
+                            Text {
+                                text: "Plain Lyrics Only (Upgrade to Synced)";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "Search for tracks that only have plain lyrics to see if synchronized lyrics are available.";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 26px;
+                            border-radius: 13px;
+                            background: #0C2333;
+                            border-width: 1px;
+                            border-color: #1E4E6E;
+                            y: (parent.height - self.height) / 2;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: root.plain-count + " plain";
+                                    color: Theme.status-plain;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Option 3: Fix Suspicious Lyrics
+                Rectangle {
+                    height: 74px;
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: opt3_ta.has-hover ? Theme.status-suspicious : Theme.stroke-soft;
+                    background: opt3_ta.pressed ? #2A1C0A : (opt3_ta.has-hover ? #171106 : #0B0E14);
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    opt3_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.start-mode(3); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+
+                        Rectangle {
+                            width: 40px;
+                            height: 40px;
+                            border-radius: 20px;
+                            background: #33240E;
+                            border-width: 1px;
+                            border-color: #6C4F1A;
+                            y: (parent.height - self.height) / 2;
+
+                            Image {
+                                source: @image-url("../assets/music_note.svg");
+                                width: 18px;
+                                height: 18px;
+                                colorize: Theme.status-suspicious;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+
+                            Text {
+                                text: "Fix Suspicious Lyrics";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "Re-search correct synced lyrics for songs with timestamps exceeding duration or mismatched titles.";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 26px;
+                            border-radius: 13px;
+                            background: #2B210C;
+                            border-width: 1px;
+                            border-color: #6C4F1A;
+                            y: (parent.height - self.height) / 2;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: root.suspicious-count + " suspicious";
+                                    color: Theme.status-suspicious;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ====================================================================
+        // STAGE 1: Live Progress & Search Logs
+        // ====================================================================
+        if root.stage == 1: VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            // Header (38px)
+            HorizontalLayout {
+                height: 38px;
+                spacing: 12px;
+
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 18px;
+                    background: #18132B;
+                    border-width: 1px;
+                    border-color: #4B2780;
+                    y: (parent.height - self.height) / 2;
+
+                    Image {
+                        source: @image-url("../assets/download.svg");
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        colorize: Theme.accent-violet;
+                    }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.mode-title != "" ? root.mode-title : "Batch Download";
+                        color: Theme.text-primary;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.phase-text;
+                        color: root.is-running ? #38BDF8 : Theme.text-muted;
+                        font-size: 12px;
+                    }
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/close.svg");
+                    icon-size: 14px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: #FF4D6D;
+                    hover-border: #E11D48;
+                    clicked => { root.close(); }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            // Progress Header Row (66px)
+            HorizontalLayout {
+                height: 66px;
+                spacing: 14px;
+
+                // Big prominent percentage
+                Text {
+                    text: Math.round(root.progress * 100) + "%";
+                    color: Theme.accent-violet;
+                    font-size: 26px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+
+                // Progress count and now-processing track
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 3px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: root.progress-text;
+                            color: Theme.text-primary;
+                            font-size: 13px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "• " + (root.stats.remaining > 0 ? (root.stats.remaining + " left") : "completed");
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                        }
+                    }
+
+                    Text {
+                        text: root.current-track != "" ? ("🎵 " + root.current-track) : "Scanning music library...";
+                        color: root.is-running ? #38BDF8 : Theme.text-dim;
+                        font-size: 11px;
+                        font-weight: 500;
+                        overflow: elide;
+                    }
+
+                    if root.is-running && root.live-status != "": Text {
+                        text: root.live-status;
+                        color: #00F5D4;
+                        font-size: 11px;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                }
+
+                // State Badge
+                Rectangle {
+                    height: 24px;
+                    border-radius: 12px;
+                    background: root.is-paused ? #2B210C : (root.is-running ? #0A1E2E : (root.is-finished ? #0D281E : #141722));
+                    border-width: 1px;
+                    border-color: root.is-paused ? Theme.status-suspicious : (root.is-running ? #0284C7 : (root.is-finished ? Theme.status-synced : Theme.text-dim));
+                    y: (parent.height - self.height) / 2;
+
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 6px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: root.is-paused ? Theme.status-suspicious : (root.is-running ? #38BDF8 : (root.is-finished ? Theme.status-synced : Theme.text-dim));
+                            y: (parent.height - self.height) / 2;
+                        }
+
+                        Text {
+                            text: root.is-paused ? "PAUSED" : (root.is-running ? "DOWNLOADING" : (root.is-finished ? "COMPLETED" : "IDLE"));
+                            color: root.is-paused ? Theme.status-suspicious : (root.is-running ? #38BDF8 : (root.is-finished ? Theme.status-synced : Theme.text-dim));
+                            font-size: 10px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // High-contrast smooth progress bar (Height: 6px)
+            Rectangle {
+                height: 6px;
+                background: #141722;
+                border-radius: 3px;
+
+                Rectangle {
+                    x: 0;
+                    width: parent.width * Math.min(1.0, Math.max(0.0, root.progress));
+                    height: 100%;
+                    background: root.is-finished ? Theme.status-synced : Theme.accent-violet;
+                    border-radius: 3px;
+                    animate width { duration: Theme.motion-fast; easing: ease-out; }
+                }
+            }
+
+            // Streamlined Metrics Strip (Height: 34px)
+            HorizontalLayout {
+                height: 34px;
+                spacing: 6px;
+
+                // Synced
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: #081611;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #10B98140;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text { text: "Synced:"; color: Theme.status-synced; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: root.stats.synced; color: #FFFFFF; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                    }
+                }
+
+                // Plain
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: #081724;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #0284C740;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text { text: "Plain:"; color: Theme.status-plain; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: root.stats.plain; color: #FFFFFF; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                    }
+                }
+
+                // Not Found
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: #10121A;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #2A3042;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text { text: "Missing:"; color: Theme.text-muted; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: root.stats.not-found; color: #FFFFFF; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                    }
+                }
+
+                // Errors
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: #1C0C12;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #E11D4840;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text { text: "Errors:"; color: Theme.status-missing; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: root.stats.errors; color: #FFFFFF; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                    }
+                }
+
+                // Remaining
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: #10121A;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #2A3042;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Text { text: "Left:"; color: Theme.text-dim; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: root.stats.remaining; color: #FFFFFF; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                    }
+                }
+            }
+
+            // Platform Activity Logs
+            VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 6px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: "Platform Activity & Search Log";
+                        color: Theme.text-primary;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.logs.length + " entries";
+                        color: Theme.text-dim;
+                        font-size: 11px;
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #030407;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: Theme.stroke-soft;
+
+                    if root.logs.length == 0: VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Scanning music library and querying providers...";
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    if root.logs.length > 0: ListView {
+                        for entry in root.logs: Rectangle {
+                            height: entry.action-text != "" ? 62px : 46px;
+                            background: transparent;
+
+                            // Divider line between items
+                            Rectangle {
+                                y: parent.height - 1px;
+                                height: 1px;
+                                background: #10131C;
+                            }
+
+                            VerticalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: 2px;
+                                alignment: center;
+
+                                // Top row: Badge + Title / Artist + Timestamp
+                                HorizontalLayout {
+                                    spacing: 8px;
+
+                                    // Status Badge (fixed width, left-aligned)
+                                    Rectangle {
+                                        width: 68px;
+                                        height: 18px;
+                                        border-radius: 9px;
+                                        y: (parent.height - self.height) / 2;
+                                        background:
+                                            entry.badge-type == "synced" ? #0D281E :
+                                            entry.badge-type == "plain" ? #0C2333 :
+                                            entry.badge-type == "missing" ? #2B1117 :
+                                            entry.badge-type == "error" ? #2B1117 :
+                                            entry.badge-type == "scan" ? #221B3D : #161922;
+                                        border-width: 1px;
+                                        border-color:
+                                            entry.badge-type == "synced" ? #10B981 :
+                                            entry.badge-type == "plain" ? #0284C7 :
+                                            entry.badge-type == "missing" ? #E11D48 :
+                                            entry.badge-type == "error" ? #E11D48 :
+                                            entry.badge-type == "scan" ? #7C3AED : Theme.text-dim;
+
+                                        Text {
+                                            text: entry.badge-text;
+                                            color:
+                                                entry.badge-type == "synced" ? Theme.status-synced :
+                                                entry.badge-type == "plain" ? Theme.status-plain :
+                                                entry.badge-type == "missing" ? Theme.status-missing :
+                                                entry.badge-type == "error" ? Theme.status-missing :
+                                                entry.badge-type == "scan" ? Theme.accent-violet : Theme.text-muted;
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    // Track Info
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: entry.track-artist != ""
+                                            ? (entry.track-artist + " — " + entry.track-title)
+                                            : entry.track-title;
+                                        color: Theme.text-primary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+
+                                    // Timestamp
+                                    Text {
+                                        text: entry.timestamp;
+                                        color: Theme.text-dim;
+                                        font-size: 10px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Middle row: Platform Search Breakdown
+                                HorizontalLayout {
+                                    padding-left: 76px;
+                                    Text {
+                                        text: entry.details;
+                                        color: Theme.text-muted;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Bottom row: Result Action (e.g. Saved synced lyrics from NetEase)
+                                if entry.action-text != "": HorizontalLayout {
+                                    padding-left: 76px;
+                                    Text {
+                                        text: entry.action-text;
+                                        color:
+                                            entry.badge-type == "synced" ? Theme.status-synced :
+                                            entry.badge-type == "plain" ? Theme.status-plain :
+                                            entry.badge-type == "missing" ? Theme.text-dim :
+                                            entry.badge-type == "error" ? Theme.status-missing : Theme.text-muted;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Footer controls (Height: 34px)
+            HorizontalLayout {
+                height: 34px;
+                spacing: 12px;
+
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.is-running
+                        ? (root.is-paused ? "Download is paused. Click Resume to continue." : (root.live-provider != "" ? root.live-provider : "Searching enabled providers..."))
+                        : (root.is-finished ? "Batch process finished." : "");
+                    color: root.is-paused ? Theme.status-suspicious : (root.is-running ? #38BDF8 : Theme.text-dim);
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                if root.is-running: Rectangle {
+                    width: 92px;
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    background: pr_ta.pressed ? #241D10 : (pr_ta.has-hover ? #1B150A : #110E07);
+                    border-width: 1px;
+                    border-color: root.is-paused ? Theme.status-synced : Theme.status-suspicious;
+
+                    pr_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.pause-resume(); }
+                    }
+
+                    Text {
+                        text: root.is-paused ? "Resume" : "Pause";
+                        color: root.is-paused ? Theme.status-synced : Theme.status-suspicious;
+                        font-size: 12px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.is-running: Rectangle {
+                    width: 82px;
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    background: stop_ta.pressed ? #35121A : (stop_ta.has-hover ? #250D13 : #15070B);
+                    border-width: 1px;
+                    border-color: #E11D48;
+
+                    stop_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.stop(); }
+                    }
+
+                    Text {
+                        text: "Stop";
+                        color: Theme.status-missing;
+                        font-size: 12px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.is-finished || !root.is-running: Rectangle {
+                    width: 100px;
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    background: close_ta.pressed
+                        ? Theme.accent-violet-strong
+                        : (close_ta.has-hover ? #9D72FF : Theme.accent-violet);
+
+                    close_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.close(); }
+                    }
+
+                    Text {
+                        text: "Done";
+                        color: #FFFFFF;
+                        font-size: 12px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

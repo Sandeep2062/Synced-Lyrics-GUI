@@ -1,0 +1,382 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+import { CoverTile, IconButton, StatusPill, TextField } from "components.slint";
+import { TrackData } from "tracks_view.slint";
+
+export struct AlbumData {
+    // The album's first track, which is where its cover art lives. Not drawn.
+    path: string,
+    name: string,
+    artist: string,
+    track-count: int,
+    synced-count: int,
+    cover: image,
+    has-cover: bool,
+}
+
+// Cover art with the album and artist underneath — the card the grid is made of.
+component AlbumCard inherits Rectangle {
+    in property <AlbumData> album;
+    callback clicked();
+
+    // Artwork is a fixed size rather than "the cell width minus the padding":
+    // the list measures an item's height before the item's width is settled, so
+    // a width-dependent height gets cached wrong and the grid collapses to a
+    // single cramped row. 124px fits the narrowest supported window
+    // (960px / 5 columns) with room for the card's padding.
+    private property <length> art-size: 124px;
+
+    // Artwork plus the padding, name, artist and status line. Constant, and
+    // matched by `album_card_height` at the call sites.
+    height: root.art-size + 92px;
+
+    border-radius: Theme.radius-md;
+    background: card_ta.pressed
+        ? Theme.bg-active
+        : (card_ta.has-hover ? Theme.bg-hover : Theme.bg-card);
+    border-width: 1px;
+    border-color: card_ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft;
+    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+    card_ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        // A fixed-size child of a layout is start-aligned, so centre it explicitly.
+        HorizontalLayout {
+            alignment: center;
+
+            CoverTile {
+                cover: root.album.cover;
+                has-cover: root.album.has-cover;
+                tile-size: root.art-size;
+                icon-size: root.art-size / 3;
+                tile-radius: 10px;
+            }
+        }
+
+        Text {
+            text: root.album.name;
+            color: Theme.text-primary;
+            font-size: 13px;
+            font-weight: 700;
+            overflow: elide;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.album.artist;
+            color: Theme.text-muted;
+            font-size: 11px;
+            overflow: elide;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            height: 20px;
+
+            Rectangle {
+                height: 20px;
+                border-radius: 10px;
+                background: #000000;
+                border-width: 1px;
+                border-color: root.album.synced-count == root.album.track-count
+                    ? Theme.status-synced
+                    : Theme.stroke-soft;
+
+                HorizontalLayout {
+                    padding-left: 9px;
+                    padding-right: 9px;
+                    Text {
+                        text: root.album.synced-count + "/" + root.album.track-count + " synced";
+                        color: root.album.synced-count == root.album.track-count
+                            ? Theme.status-synced
+                            : Theme.text-muted;
+                        font-size: 10px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AlbumsView inherits Rectangle {
+    in-out property <[AlbumData]> albums: [];
+    // One entry per grid row; the card grid is `grid-columns` wide, matching
+    // ALBUM_GRID_COLUMNS in Rust.
+    in-out property <[int]> album-rows: [];
+    in-out property <bool> is-detail-mode: false;
+    in-out property <int> selected-album-index: -1;
+    in-out property <[TrackData]> album-tracks: [];
+    in-out property <image> selected-album-cover;
+    in-out property <bool> selected-album-has-cover: false;
+
+    callback open-album(int);
+    callback back-to-grid();
+    callback download-album(int);
+    callback play-track(int);
+
+    private property <int> grid-columns: 5;
+    private property <[int]> grid-slots: [0, 1, 2, 3, 4];
+
+    background: Theme.bg-primary;
+
+    function album-index(row: int, slot: int) -> int {
+        return row * root.grid-columns + slot;
+    }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        // Album Grid
+        if !root.is-detail-mode: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: Theme.spacing-md;
+
+            // No `alignment: start` here: it would collapse the stretch spacer and
+            // strand the album count next to the search field instead of the edge.
+            HorizontalLayout {
+                height: 34px;
+                spacing: Theme.spacing-md;
+                TextField {
+                    width: 280px;
+                    placeholder: "Filter albums...";
+                    with-search-icon: true;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.albums.length + " Albums in Library";
+                    color: Theme.text-muted;
+                    font-size: 13px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.albums.length == 0: VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+                Rectangle { height: 60px; }
+                // A fixed-size child of a layout is start-aligned, so centre it explicitly.
+                HorizontalLayout {
+                    width: 100%;
+                    alignment: center;
+
+                    Image {
+                        source: @image-url("../assets/disc.svg");
+                        width: 46px;
+                        height: 46px;
+                        colorize: Theme.text-dim;
+                    }
+                }
+                Text { text: "No Albums Found"; color: Theme.text-primary; font-size: 18px; font-weight: 700; horizontal-alignment: center; }
+                Text { text: "Use \"Manage Directories\" in the top bar to scan and import your albums."; color: Theme.text-muted; font-size: 13px; horizontal-alignment: center; }
+            }
+
+            if root.albums.length > 0: ListView {
+                vertical-stretch: 1;
+                for row in root.album-rows: HorizontalLayout {
+                    // The list measures an item's height before the item's width
+                    // is settled, so state it outright instead of letting it fall
+                    // out of the cards inside (which collapses the grid to a
+                    // single squashed row). Must match `AlbumCard.height`.
+                    height: 216px;
+                    spacing: Theme.spacing-md;
+
+                    for slot in root.grid-slots: Rectangle {
+                        horizontal-stretch: 1;
+
+                        if root.album-index(row, slot) < root.albums.length: AlbumCard {
+                            album: root.albums[root.album-index(row, slot)];
+                            clicked => { root.open-album(root.album-index(row, slot)); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Album Detail View
+        if root.is-detail-mode: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: Theme.spacing-md;
+
+            HorizontalLayout {
+                height: 34px;
+                Rectangle {
+                    width: 130px;
+                    height: 34px;
+                    background: back_ta.pressed ? Theme.bg-active : (back_ta.has-hover ? #1B1E2C : Theme.bg-card);
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: back_ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft;
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+                    Text { text: "←  Back to Albums"; color: Theme.text-primary; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                    back_ta := TouchArea { mouse-cursor: pointer; clicked => { root.back-to-grid(); } }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // A fixed-height child of a layout is start-aligned: centre it.
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    height: 34px;
+                    width: 236px;
+                    border-radius: 17px;
+                    background: dl_ta.pressed
+                        ? Theme.accent-violet-strong
+                        : (dl_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                    animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 7px;
+                        Image {
+                            source: @image-url("../assets/download.svg");
+                            y: (parent.height - self.height) / 2;
+                            width: 14px;
+                            height: 14px;
+                            colorize: #FFFFFF;
+                        }
+                        Text {
+                            text: "Download Lyrics for this Album";
+                            color: #FFFFFF;
+                            font-size: 12px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    dl_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.download-album(root.selected-album-index); }
+                    }
+                }
+            }
+
+            // Explicit height: this row's contents stretch, so left to itself it
+            // grows to fill the view and squeezes the track list into the bottom
+            // strip of the window.
+            HorizontalLayout {
+                height: 122px;
+                spacing: 20px;
+                alignment: start;
+
+                CoverTile {
+                    cover: root.selected-album-cover;
+                    has-cover: root.selected-album-has-cover;
+                    tile-size: 110px;
+                    icon-size: 44px;
+                    tile-radius: 12px;
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: root.selected-album-index >= 0 ? root.albums[root.selected-album-index].name : "";
+                        color: Theme.text-primary;
+                        font-size: 24px;
+                        font-weight: 800;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.selected-album-index >= 0 ? root.albums[root.selected-album-index].artist : "";
+                        color: Theme.text-muted;
+                        font-size: 15px;
+                        font-weight: 500;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.album-tracks.length + " Tracks  •  Click any track to play";
+                        color: Theme.text-dim;
+                        font-size: 12px;
+                    }
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for track[idx] in root.album-tracks: Rectangle {
+                    height: 64px;
+                    border-radius: Theme.radius-sm;
+                    background: row_ta.pressed
+                        ? Theme.bg-active
+                        : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? #000000 : transparent));
+                    animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                    // Declared before the content so the row-sized hit area sits
+                    // behind the play button and cannot swallow its clicks.
+                    row_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.play-track(idx); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 12px;
+
+                        Text {
+                            width: 26px;
+                            text: idx + 1;
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                        }
+
+                        CoverTile {
+                            cover: track.cover;
+                            has-cover: track.has-cover;
+                            tile-size: 44px;
+                            icon-size: 22px;
+                            tile-radius: 8px;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+                            Text { text: track.title; color: row_ta.has-hover ? #FFFFFF : Theme.text-primary; font-size: 14px; font-weight: 600; overflow: elide; animate color { duration: Theme.motion-fast; easing: ease-out; } }
+                            Text { text: track.artist; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                        }
+
+                        Text {
+                            width: 44px;
+                            text: track.duration;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                        }
+
+                        HorizontalLayout {
+                            width: 100px;
+                            alignment: center;
+                            StatusPill { status: track.status; }
+                        }
+
+                        IconButton {
+                            icon: @image-url("../assets/track_play.svg");
+                            button-size: 30px;
+                            icon-size: 13px;
+                            icon-color: Theme.text-muted;
+                            hover-border: #4A5478;
+                            clicked => { root.play-track(idx); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

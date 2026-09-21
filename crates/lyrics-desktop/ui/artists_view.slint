@@ -1,0 +1,272 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+import { CoverTile, IconButton, StatusPill, TextField } from "components.slint";
+import { TrackData } from "tracks_view.slint";
+
+// No artwork here on purpose: an artist is not an album, and a stand-in circle
+// (photo or initials) only added noise next to the name.
+export struct ArtistData {
+    name: string,
+    track-count: int,
+    album-count: int,
+    synced-count: int,
+}
+
+export component ArtistsView inherits Rectangle {
+    in-out property <[ArtistData]> artists: [];
+    in-out property <int> selected-artist-index: -1;
+    in-out property <[TrackData]> artist-tracks: [];
+
+    callback select-artist(int);
+    callback download-artist(int);
+    callback play-track(int);
+
+    background: Theme.bg-primary;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+
+        // Left Panel: Artist List
+        VerticalLayout {
+            width: 340px;
+            spacing: 12px;
+
+            TextField {
+                placeholder: "Search artists...";
+                with-search-icon: true;
+            }
+
+            if root.artists.length == 0: VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+                Rectangle { height: 40px; }
+                // A fixed-size child of a layout is start-aligned, so centre it explicitly.
+                HorizontalLayout {
+                    width: 100%;
+                    alignment: center;
+
+                    Image {
+                        source: @image-url("../assets/person.svg");
+                        width: 40px;
+                        height: 40px;
+                        colorize: Theme.text-dim;
+                    }
+                }
+                Text { text: "No Artists Found"; color: Theme.text-primary; font-size: 16px; font-weight: 700; horizontal-alignment: center; }
+                Text { text: "Add folders to see your artists."; color: Theme.text-muted; font-size: 12px; horizontal-alignment: center; }
+            }
+
+            if root.artists.length > 0: ListView {
+                for artist[idx] in root.artists: Rectangle {
+                    height: 52px;
+                    border-radius: Theme.radius-sm;
+                    background: idx == root.selected-artist-index
+                        ? Theme.accent-violet-soft
+                        : (ta.has-hover ? Theme.bg-hover : transparent);
+                    border-width: idx == root.selected-artist-index ? 1px : 0px;
+                    border-color: #7C3AED;
+
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.select-artist(idx); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 12px;
+
+                        Rectangle {
+                            width: 3px;
+                            height: 100%;
+                            border-radius: 1.5px;
+                            background: Theme.accent-violet;
+                            opacity: idx == root.selected-artist-index ? 1 : 0;
+                            animate opacity { duration: Theme.motion-base; easing: ease-out; }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Text { text: artist.name; color: Theme.text-primary; font-size: 13px; font-weight: 600; overflow: elide; }
+                            Text { text: artist.track-count + " tracks  •  " + artist.album-count + " albums"; color: Theme.text-muted; font-size: 11px; overflow: elide; }
+                        }
+
+                        Text {
+                            text: artist.synced-count + "/" + artist.track-count;
+                            color: artist.synced-count == artist.track-count ? Theme.status-synced : Theme.text-dim;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Vertical Divider
+        Rectangle { width: 1px; background: Theme.divider; }
+
+        // Right Panel: Artist Detail
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding-left: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+
+            if root.selected-artist-index >= 0: VerticalLayout {
+                spacing: Theme.spacing-md;
+
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    VerticalLayout {
+                        spacing: 4px;
+                        vertical-stretch: 1;
+                        alignment: center;
+                        Text {
+                            text: root.artists[root.selected-artist-index].name;
+                            color: Theme.text-primary;
+                            font-size: 24px;
+                            font-weight: 800;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.artists[root.selected-artist-index].track-count + " tracks across " + root.artists[root.selected-artist-index].album-count + " albums";
+                            color: Theme.text-muted;
+                            font-size: 13px;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 190px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: dl_art_ta.pressed
+                                ? Theme.accent-violet-strong
+                                : (dl_art_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                            animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 7px;
+                                Image {
+                                    source: @image-url("../assets/download.svg");
+                                    y: (parent.height - self.height) / 2;
+                                    width: 14px;
+                                    height: 14px;
+                                    colorize: #FFFFFF;
+                                }
+                                Text {
+                                    text: "Download Artist Lyrics";
+                                    color: #FFFFFF;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            dl_art_ta := TouchArea { mouse-cursor: pointer; clicked => { root.download-artist(root.selected-artist-index); } }
+                        }
+                    }
+                }
+
+                ListView {
+                    for track[idx] in root.artist-tracks: Rectangle {
+                        height: 64px;
+                        border-radius: Theme.radius-sm;
+                        background: row_ta.pressed
+                            ? Theme.bg-active
+                            : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? #000000 : transparent));
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                        row_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.play-track(idx); }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 12px;
+
+                            Text {
+                                width: 26px;
+                                text: idx + 1;
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                            }
+
+                            CoverTile {
+                                cover: track.cover;
+                                has-cover: track.has-cover;
+                                tile-size: 44px;
+                                icon-size: 22px;
+                                tile-radius: 8px;
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                vertical-stretch: 1;
+                                alignment: center;
+                                spacing: 3px;
+                                Text { text: track.title; color: row_ta.has-hover ? #FFFFFF : Theme.text-primary; font-size: 14px; font-weight: 600; overflow: elide; animate color { duration: Theme.motion-fast; easing: ease-out; } }
+                                Text { text: track.album; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                            }
+
+                            Text {
+                                width: 44px;
+                                text: track.duration;
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                            }
+
+                            HorizontalLayout {
+                                width: 100px;
+                                alignment: center;
+                                StatusPill { status: track.status; }
+                            }
+
+                            IconButton {
+                                icon: @image-url("../assets/track_play.svg");
+                                button-size: 30px;
+                                icon-size: 13px;
+                                icon-color: Theme.text-muted;
+                                hover-border: #4A5478;
+                                clicked => { root.play-track(idx); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.selected-artist-index < 0: VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+                HorizontalLayout {
+                    width: 100%;
+                    alignment: center;
+
+                    Image {
+                        source: @image-url("../assets/person.svg");
+                        width: 34px;
+                        height: 34px;
+                        colorize: Theme.text-dim;
+                    }
+                }
+                Text { text: "Select an Artist"; color: Theme.text-primary; font-size: 16px; font-weight: 700; horizontal-alignment: center; }
+                Text { text: "Choose an artist from the list on the left to view tracks and download lyrics."; color: Theme.text-muted; font-size: 13px; horizontal-alignment: center; }
+            }
+        }
+    }
+}

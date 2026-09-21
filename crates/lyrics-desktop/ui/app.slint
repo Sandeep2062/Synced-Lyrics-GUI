@@ -1,0 +1,354 @@
+import { Theme } from "theme.slint";
+import { AppHeader } from "header.slint";
+import { PlayerBar } from "player_bar.slint";
+import { SideLyricsPanel, LyricLine } from "side_lyrics_panel.slint";
+import { TracksView, TrackData } from "tracks_view.slint";
+import { AlbumsView, AlbumData } from "albums_view.slint";
+import { ArtistsView, ArtistData } from "artists_view.slint";
+import { SettingsView } from "settings_view.slint";
+import { ManageDirectoriesDialog } from "manage_directories.slint";
+import { BatchDownloadDialog, BatchLogEntry, BatchStats } from "batch_download_dialog.slint";
+import { BatchDownloadPill } from "batch_download_pill.slint";
+
+export { TrackData, AlbumData, ArtistData, LyricLine, BatchLogEntry, BatchStats }
+
+export component MainWindow inherits Window {
+    title: "Synced Lyrics";
+    icon: @image-url("../assets/icon.png");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 960px;
+    min-height: 600px;
+    background: Theme.bg-primary;
+    
+    // Core properties
+    in-out property <int> active-tab: 0;
+    
+    // Header properties/callbacks
+    in-out property <bool> is-refreshing: false;
+    in-out property <float> refresh-progress: 0.0;
+    in-out property <string> refresh-text: "Refresh Directory";
+    callback manage-directories();
+    callback refresh();
+    callback download-all();
+    
+    // PlayerBar properties
+    in-out property <string> track-title: "";
+    in-out property <string> track-subtitle: "";
+    in-out property <string> position-text: "00:00";
+    in-out property <string> duration-text: "00:00";
+    in-out property <string> playback-icon: "▶";
+    in-out property <float> seek-position: 0.0;
+    in-out property <float> volume: 0.7;
+    in-out property <bool> is-playing: false;
+    in-out property <bool> has-track: false;
+    in-out property <bool> has-lyrics: false;
+    in-out property <image> track-cover;
+    in-out property <bool> has-cover: false;
+    in-out property <[float]> waveform-data: [];
+    
+    callback play-pause();
+    callback seek(float);
+    callback rewind();
+    callback forward();
+    callback prev-track();
+    callback next-track();
+    callback volume-changed(float);
+    
+    // Lyrics Panel properties
+    in-out property <bool> lyrics-visible: false;
+    private property <length> lyrics-offset: root.lyrics-visible ? 390px : 0px;
+    animate lyrics-offset { duration: 260ms; easing: ease-in-out; }
+    in-out property <int> active-line-index: -1;
+    in-out property <[LyricLine]> lyrics-lines: [];
+    in-out property <string> lyrics-plain-text: "";
+    in-out property <string> lyrics-status: "";
+    
+    callback seek-to-line(int);
+    callback copy-lyrics();
+    callback fetch-current-lyrics();
+    
+    // TracksView properties
+    in-out property <[TrackData]> tracks: [];
+    in-out property <string> search-text: "";
+    in-out property <int> status-filter: 0;
+    in-out property <string> tracks-summary: "";
+    
+    callback select-track(int);
+    callback play-track(int);
+    callback fetch-track(int);
+    callback search-changed(string);
+    callback filter-changed(int);
+    
+    // AlbumsView properties
+    in-out property <[AlbumData]> albums: [];
+    in-out property <[int]> album-rows: [];
+    in-out property <bool> album-detail-mode: false;
+    in-out property <int> selected-album-index: -1;
+    in-out property <[TrackData]> album-tracks: [];
+    in-out property <image> selected-album-cover;
+    in-out property <bool> selected-album-has-cover: false;
+    
+    callback open-album(int);
+    callback back-to-album-grid();
+    callback download-album(int);
+    callback play-album-track(int);
+    
+    // ArtistsView properties
+    in-out property <[ArtistData]> artists: [];
+    in-out property <int> selected-artist-index: -1;
+    in-out property <[TrackData]> artist-tracks: [];
+    
+    callback select-artist(int);
+    callback download-artist(int);
+    callback play-artist-track(int);
+    
+    // SettingsView properties
+    in-out property <[string]> settings-music-dirs: [];
+    in-out property <string> settings-lrclib-url: "https://lrclib.net";
+    in-out property <string> settings-musixmatch-key: "";
+    in-out property <string> settings-genius-token: "";
+    in-out property <bool> settings-enable-lrclib: true;
+    in-out property <bool> settings-enable-musixmatch: true;
+    in-out property <bool> settings-enable-netease: true;
+    in-out property <bool> settings-enable-megalobiz: true;
+    in-out property <bool> settings-enable-genius: true;
+    in-out property <float> settings-request-interval: 1.0;
+    in-out property <int> settings-cache-period-idx: 1;
+    in-out property <bool> settings-scan-on-startup: false;
+    in-out property <string> settings-status: "";
+    in-out property <string> updates-status: "";
+    in-out property <bool> updates-checking: false;
+    in-out property <string> app-version: "";
+    
+    callback save-settings();
+    callback check-updates();
+    callback open-github();
+    
+    // Manage-directories overlay
+    in-out property <bool> directories-open: false;
+    callback add-directory();
+    callback remove-directory(int);
+    callback close-directories();
+
+    // Batch download modal
+    in-out property <bool> batch-download-open: false;
+    in-out property <int> batch-download-stage: 0;
+    in-out property <int> batch-total-count: 0;
+    in-out property <int> batch-missing-count: 0;
+    in-out property <int> batch-plain-count: 0;
+    in-out property <int> batch-suspicious-count: 0;
+    in-out property <string> batch-mode-title: "";
+    in-out property <string> batch-phase-text: "Rescanning music directories...";
+    in-out property <string> batch-current-track: "";
+    in-out property <string> batch-live-status: "";
+    in-out property <string> batch-live-provider: "";
+    in-out property <float> batch-progress: 0.0;
+    in-out property <string> batch-progress-text: "0/0";
+    in-out property <BatchStats> batch-stats: { total: 0, processed: 0, remaining: 0, synced: 0, plain: 0, not-found: 0, errors: 0 };
+    in-out property <[BatchLogEntry]> batch-logs: [];
+    in-out property <bool> batch-is-running: false;
+    in-out property <bool> batch-is-paused: false;
+    in-out property <bool> batch-is-finished: false;
+
+    callback batch-start-mode(int);
+    callback batch-pause-resume();
+    callback batch-stop();
+    callback batch-close();
+    
+    VerticalLayout {
+        // Row 0: Header
+        AppHeader {
+            active-tab: root.active-tab;
+            tab-changed(idx) => { root.active-tab = idx; }
+            manage-directories => { root.manage-directories(); }
+            refresh => { root.refresh(); }
+            download-all => { root.download-all(); }
+            is-refreshing: root.is-refreshing;
+            refresh-progress: root.refresh-progress;
+            refresh-text: root.refresh-text;
+            is-batch-running: root.batch-is-running;
+            batch-progress: root.batch-progress;
+            batch-progress-text: root.batch-progress-text;
+        }
+        
+        // Row 1: Main Content + Animated Slide-in Right-Side Lyrics Panel
+        Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            clip: true;
+
+            // Main View Area (Tracks / Albums / Artists / Settings)
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width - root.lyrics-offset;
+                height: 100%;
+                clip: true;
+
+                if root.active-tab == 0: TracksView {
+                    tracks: root.tracks;
+                    search-text <=> root.search-text;
+                    status-filter <=> root.status-filter;
+                    summary: root.tracks-summary;
+                    select-track(idx) => { root.select-track(idx); }
+                    play-track(idx) => { root.play-track(idx); }
+                    fetch-track(idx) => { root.fetch-track(idx); }
+                    search-changed(t) => { root.search-changed(t); }
+                    filter-changed(idx) => { root.filter-changed(idx); }
+                }
+                if root.active-tab == 1: AlbumsView {
+                    albums: root.albums;
+                    album-rows: root.album-rows;
+                    is-detail-mode: root.album-detail-mode;
+                    selected-album-index: root.selected-album-index;
+                    album-tracks: root.album-tracks;
+                    selected-album-cover: root.selected-album-cover;
+                    selected-album-has-cover: root.selected-album-has-cover;
+                    open-album(idx) => { root.open-album(idx); }
+                    back-to-grid => { root.back-to-album-grid(); }
+                    download-album(idx) => { root.download-album(idx); }
+                    play-track(idx) => { root.play-album-track(idx); }
+                }
+                if root.active-tab == 2: ArtistsView {
+                    artists: root.artists;
+                    selected-artist-index: root.selected-artist-index;
+                    artist-tracks: root.artist-tracks;
+                    select-artist(idx) => { root.select-artist(idx); }
+                    download-artist(idx) => { root.download-artist(idx); }
+                    play-track(idx) => { root.play-artist-track(idx); }
+                }
+                if root.active-tab == 3: SettingsView {
+                    lrclib-url <=> root.settings-lrclib-url;
+                    musixmatch-key <=> root.settings-musixmatch-key;
+                    genius-token <=> root.settings-genius-token;
+                    enable-lrclib <=> root.settings-enable-lrclib;
+                    enable-musixmatch <=> root.settings-enable-musixmatch;
+                    enable-netease <=> root.settings-enable-netease;
+                    enable-megalobiz <=> root.settings-enable-megalobiz;
+                    enable-genius <=> root.settings-enable-genius;
+                    request-interval <=> root.settings-request-interval;
+                    cache-period-idx <=> root.settings-cache-period-idx;
+                    scan-on-startup <=> root.settings-scan-on-startup;
+                    settings-status: root.settings-status;
+                    updates-status: root.updates-status;
+                    updates-checking: root.updates-checking;
+                    app-version: root.app-version;
+                    save-settings => { root.save-settings(); }
+                    check-updates => { root.check-updates(); }
+                    open-github => { root.open-github(); }
+                }
+            }
+
+            // Right: Animated Slide-over Side Lyrics Panel
+            SideLyricsPanel {
+                x: parent.width - root.lyrics-offset;
+                y: 0;
+                width: 390px;
+                height: 100%;
+                visible: root.lyrics-offset > 0px;
+                is-open: root.lyrics-visible;
+                active-line-index: root.active-line-index;
+                lines: root.lyrics-lines;
+                plain-text: root.lyrics-plain-text;
+                track-title: root.track-title;
+                track-artist: root.track-subtitle;
+                track-cover: root.track-cover;
+                has-cover: root.has-cover;
+                status: root.lyrics-status;
+
+                seek-to-line(idx) => { root.seek-to-line(idx); }
+                copy-lyrics => { root.copy-lyrics(); }
+                close-panel => { root.lyrics-visible = false; }
+                fetch-lyrics => { root.fetch-current-lyrics(); }
+            }
+        }
+        
+        // Row 2: PlayerBar
+        PlayerBar {
+            track-title: root.track-title;
+            track-subtitle: root.track-subtitle;
+            position-text: root.position-text;
+            duration-text: root.duration-text;
+            playback-icon: root.playback-icon;
+            seek-position: root.seek-position;
+            volume: root.volume;
+            is-playing: root.is-playing;
+            has-track: root.has-track;
+            has-lyrics: root.has-lyrics;
+            track-cover: root.track-cover;
+            has-cover: root.has-cover;
+            waveform-data: root.waveform-data;
+            is-lyrics-open: root.lyrics-visible;
+
+            play-pause => { root.play-pause(); }
+            seek(val) => { root.seek(val); }
+            rewind => { root.rewind(); }
+            forward => { root.forward(); }
+            prev-track => { root.prev-track(); }
+            next-track => { root.next-track(); }
+            volume-changed(val) => { root.volume-changed(val); }
+            toggle-lyrics => { root.lyrics-visible = !root.lyrics-visible; }
+        }
+    }
+
+    // Region picker, drawn last so it sits above the whole window.
+    if root.directories-open: ManageDirectoriesDialog {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        directories: root.settings-music-dirs;
+
+        add-directory => { root.add-directory(); }
+        remove-directory(idx) => { root.remove-directory(idx); }
+        close => { root.close-directories(); }
+    }
+
+    // Batch download modal (options selection and live progress/logs)
+    if root.batch-download-open: BatchDownloadDialog {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        stage: root.batch-download-stage;
+        total-count: root.batch-total-count;
+        missing-count: root.batch-missing-count;
+        plain-count: root.batch-plain-count;
+        suspicious-count: root.batch-suspicious-count;
+        mode-title: root.batch-mode-title;
+        phase-text: root.batch-phase-text;
+        current-track: root.batch-current-track;
+        live-status: root.batch-live-status;
+        live-provider: root.batch-live-provider;
+        progress: root.batch-progress;
+        progress-text: root.batch-progress-text;
+        stats: root.batch-stats;
+        logs: root.batch-logs;
+        is-running: root.batch-is-running;
+        is-paused: root.batch-is-paused;
+        is-finished: root.batch-is-finished;
+
+        close => { root.batch-close(); }
+        start-mode(m) => { root.batch-start-mode(m); }
+        pause-resume => { root.batch-pause-resume(); }
+        stop => { root.batch-stop(); }
+    }
+
+    // Floating minimized pill for background batch downloads
+    if (root.batch-is-running || (root.batch-is-finished && root.batch-download-stage == 1)) && !root.batch-download-open: BatchDownloadPill {
+        x: parent.width - self.width - 24px - (root.lyrics-visible ? root.lyrics-offset : 0px);
+        y: parent.height - 76px - self.height - 14px;
+        is-running: root.batch-is-running;
+        is-paused: root.batch-is-paused;
+        is-finished: root.batch-is-finished;
+        progress: root.batch-progress;
+        progress-text: root.batch-progress-text;
+        current-track: root.batch-current-track;
+        synced-count: root.batch-stats.synced;
+        plain-count: root.batch-stats.plain;
+
+        clicked => { root.batch-download-open = true; }
+        close => { root.batch-is-finished = false; }
+    }
+}

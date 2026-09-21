@@ -1,0 +1,618 @@
+import { Theme } from "theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { FilterChip, TextField, ToggleSwitch, VolumeSlider } from "components.slint";
+
+component ProviderCard inherits Rectangle {
+    in-out property <bool> checked: false;
+    in property <string> name: "";
+    in property <string> type-tag: "";
+    in property <string> auth-tag: "";
+    in property <string> description: "";
+    callback toggled(bool);
+
+    background: row_ta.has-hover ? #0E1118 : #07080B;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.checked ? (row_ta.has-hover ? #10B98160 : #10B98130) : (row_ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft);
+    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        alignment: space-between;
+
+        VerticalLayout {
+            spacing: 3px;
+            horizontal-stretch: 1;
+            alignment: center;
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                Text {
+                    text: root.name;
+                    color: Theme.text-primary;
+                    font-size: 13px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                // Type tag (e.g. Synced + Plain)
+                Rectangle {
+                    height: 18px;
+                    border-radius: 9px;
+                    background: #111C2D;
+                    border-width: 1px;
+                    border-color: #2563EB40;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: center;
+                        Text {
+                            text: root.type-tag;
+                            color: #60A5FA;
+                            font-size: 10px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Auth / Status tag (e.g. Free API, Built-in Token)
+                Rectangle {
+                    height: 18px;
+                    border-radius: 9px;
+                    background: #0E2419;
+                    border-width: 1px;
+                    border-color: #10B98140;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: center;
+                        Text {
+                            text: root.auth-tag;
+                            color: #34D399;
+                            font-size: 10px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: root.description;
+                color: Theme.text-dim;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: center;
+
+            Text {
+                text: root.checked ? "ON" : "OFF";
+                color: root.checked ? #34D399 : Theme.text-dim;
+                font-size: 11px;
+                font-weight: 700;
+                vertical-alignment: center;
+                width: 26px;
+                horizontal-alignment: right;
+            }
+
+            ToggleSwitch {
+                checked <=> root.checked;
+                toggled(v) => { root.toggled(v); }
+            }
+        }
+    }
+
+    row_ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    in-out property <string> lrclib-url: "https://lrclib.net";
+    in-out property <string> musixmatch-key: "";
+    in-out property <string> genius-token: "";
+
+    in-out property <bool> enable-lrclib: true;
+    in-out property <bool> enable-musixmatch: true;
+    in-out property <bool> enable-netease: true;
+    in-out property <bool> enable-megalobiz: true;
+    in-out property <bool> enable-genius: true;
+
+    in-out property <float> request-interval: 1.0;
+    in-out property <int> cache-period-idx: 1;
+    in-out property <bool> scan-on-startup: false;
+
+    // Shown next to the save button ("Saved", "Saving…") and next to the update
+    // button ("Up to date", "v1.2.0 available").
+    in-out property <string> settings-status: "";
+    in-out property <string> updates-status: "";
+    in-out property <bool> updates-checking: false;
+    in-out property <string> app-version: "";
+
+    callback save-settings();
+    callback check-updates();
+    callback open-github();
+
+    private property <[string]> cache-periods: ["7 days", "14 days", "30 days", "Always"];
+
+    background: Theme.bg-primary;
+
+    ScrollView {
+        VerticalLayout {
+            padding: Theme.spacing-lg;
+            spacing: Theme.spacing-md;
+
+            // 1. Lyrics Providers (Top Priority)
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        alignment: space-between;
+                        VerticalLayout {
+                            spacing: 2px;
+                            Text {
+                                text: "Lyrics Providers";
+                                color: Theme.text-primary;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "All platforms are queried in sequence. Synced lyrics always take priority over plain text.";
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                            }
+                        }
+
+                        // Quick Actions
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: center;
+
+                            // Enable All button
+                            Rectangle {
+                                height: 26px;
+                                border-radius: 13px;
+                                background: en_all_ta.pressed ? Theme.bg-active : (en_all_ta.has-hover ? #15201A : #0D1612);
+                                border-width: 1px;
+                                border-color: #10B98160;
+                                animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    alignment: center;
+                                    Text {
+                                        text: "✓ Enable All (5/5)";
+                                        color: #34D399;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                en_all_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.enable-lrclib = true;
+                                        root.enable-musixmatch = true;
+                                        root.enable-netease = true;
+                                        root.enable-megalobiz = true;
+                                        root.enable-genius = true;
+                                        root.save-settings();
+                                    }
+                                }
+                            }
+
+                            // Synced Only button
+                            Rectangle {
+                                height: 26px;
+                                border-radius: 13px;
+                                background: sync_only_ta.pressed ? Theme.bg-active : (sync_only_ta.has-hover ? #141A28 : #0C101A);
+                                border-width: 1px;
+                                border-color: #3B82F660;
+                                animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    alignment: center;
+                                    Text {
+                                        text: "Synced Only (4/5)";
+                                        color: #60A5FA;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                sync_only_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.enable-lrclib = true;
+                                        root.enable-musixmatch = true;
+                                        root.enable-netease = true;
+                                        root.enable-megalobiz = true;
+                                        root.enable-genius = false;
+                                        root.save-settings();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ProviderCard {
+                        name: "LRCLib";
+                        type-tag: "Synced + Plain";
+                        auth-tag: "Free Public API";
+                        description: "Fast, open-source database with community-contributed timestamped LRC lyrics.";
+                        checked <=> root.enable-lrclib;
+                        toggled(v) => { root.save-settings(); }
+                    }
+
+                    ProviderCard {
+                        name: "Musixmatch";
+                        type-tag: "Synced + Plain";
+                        auth-tag: "Built-in Desktop Token";
+                        description: "World's largest music catalog with automated background token authentication.";
+                        checked <=> root.enable-musixmatch;
+                        toggled(v) => { root.save-settings(); }
+                    }
+
+                    ProviderCard {
+                        name: "NetEase Music";
+                        type-tag: "Synced + Plain";
+                        auth-tag: "Free Public API";
+                        description: "Extensive international and Asian catalog with timestamped synchronized lyrics.";
+                        checked <=> root.enable-netease;
+                        toggled(v) => { root.save-settings(); }
+                    }
+
+                    ProviderCard {
+                        name: "Megalobiz";
+                        type-tag: "Synced LRC";
+                        auth-tag: "Free Public API";
+                        description: "Dedicated community catalog of crowd-uploaded synchronized LRC files.";
+                        checked <=> root.enable-megalobiz;
+                        toggled(v) => { root.save-settings(); }
+                    }
+
+                    ProviderCard {
+                        name: "Genius";
+                        type-tag: "Plain Text";
+                        auth-tag: "Web Search Bypass";
+                        description: "Massive library for plain lyrics and annotations. Public search bypass is active without a token.";
+                        checked <=> root.enable-genius;
+                        toggled(v) => { root.save-settings(); }
+                    }
+                }
+            }
+
+            // 2. Optional API Keys & Custom Instance URLs
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text {
+                            text: "Custom API Keys & Instances (Optional)";
+                            color: Theme.text-primary;
+                            font-size: 15px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "All providers above work automatically out-of-the-box. Enter keys only if using private instances.";
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "LRCLib Instance URL"; color: Theme.text-muted; font-size: 12px; }
+                        TextField {
+                            text <=> root.lrclib-url;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Musixmatch API Key"; color: Theme.text-muted; font-size: 12px; }
+                        TextField {
+                            password: true;
+                            placeholder: "Optional — built-in desktop token is used automatically";
+                            text <=> root.musixmatch-key;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Genius Client Token"; color: Theme.text-muted; font-size: 12px; }
+                        TextField {
+                            placeholder: "Optional — public web search bypass is used automatically";
+                            text <=> root.genius-token;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        height: 32px;
+                        spacing: 12px;
+
+                        Text {
+                            text: root.settings-status;
+                            color: root.settings-status == "Saved" ? Theme.status-synced : Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            animate color { duration: Theme.motion-base; easing: ease-out; }
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        Rectangle {
+                            width: 108px;
+                            height: 32px;
+                            border-radius: Theme.radius-sm;
+                            background: save_ta.pressed
+                                ? Theme.accent-violet-strong
+                                : (save_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                            animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                            Text {
+                                text: "Save";
+                                color: #FFFFFF;
+                                font-size: 12px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            save_ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.save-settings(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Performance & Scanning
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Performance & Scanning";
+                        color: Theme.text-primary;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        height: 26px;
+
+                        Text {
+                            text: "Request interval";
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            width: 150px;
+                        }
+                        VolumeSlider {
+                            width: 220px;
+                            value: root.request-interval;
+                            minimum: 0.1;
+                            maximum: 3.0;
+                            changed(v) => { root.request-interval = v; root.save-settings(); }
+                        }
+                        Text {
+                            text: Math.round(root.request-interval * 10) / 10 + "s";
+                            color: Theme.text-primary;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            width: 48px;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        Text { text: "Cache period"; color: Theme.text-muted; font-size: 12px; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            for period[i] in root.cache-periods: FilterChip {
+                                label: period;
+                                selected: root.cache-period-idx == i;
+                                clicked => { root.cache-period-idx = i; root.save-settings(); }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        height: 32px;
+                        alignment: space-between;
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            Text { text: "Scan library on startup"; color: Theme.text-primary; font-size: 12px; font-weight: 600; }
+                            Text { text: "Automatically scan music directories for changes on launch"; color: Theme.text-dim; font-size: 11px; }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: center;
+
+                            Text {
+                                text: root.scan-on-startup ? "ON" : "OFF";
+                                color: root.scan-on-startup ? #34D399 : Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                width: 26px;
+                                horizontal-alignment: right;
+                            }
+
+                            ToggleSwitch {
+                                checked <=> root.scan-on-startup;
+                                toggled(v) => { root.save-settings(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. About & Updates
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        height: 44px;
+
+                        Image {
+                            source: @image-url("../assets/icon.png");
+                            width: 40px;
+                            height: 40px;
+                            y: (parent.height - self.height) / 2;
+                        }
+
+                        VerticalLayout {
+                            spacing: 3px;
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text { text: "Synced Lyrics"; color: Theme.text-primary; font-size: 14px; font-weight: 700; }
+                            Text {
+                                text: "Version " + root.app-version + "  •  Rust + Slint";
+                                color: Theme.text-muted;
+                                font-size: 11px;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 34px;
+                            height: 34px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 17px;
+                            background: gh_ta.pressed
+                                ? Theme.bg-active
+                                : (gh_ta.has-hover ? Theme.bg-hover : transparent);
+                            border-width: 1px;
+                            border-color: gh_ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft;
+                            animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                            Image {
+                                source: @image-url("../assets/github.svg");
+                                width: 17px;
+                                height: 17px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                colorize: gh_ta.has-hover ? #FFFFFF : Theme.text-muted;
+                                animate colorize { duration: Theme.motion-fast; easing: ease-out; }
+                            }
+
+                            gh_ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-github(); }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.divider;
+                    }
+
+                    HorizontalLayout {
+                        height: 32px;
+                        spacing: 12px;
+
+                        Text {
+                            text: root.updates-status;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        Rectangle {
+                            width: 156px;
+                            height: 32px;
+                            border-radius: Theme.radius-sm;
+                            background: upd_ta.pressed
+                                ? Theme.bg-active
+                                : (upd_ta.has-hover ? #12141C : #000000);
+                            border-width: 1px;
+                            border-color: root.updates-checking
+                                ? Theme.status-suspicious
+                                : (upd_ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft);
+                            animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                            Text {
+                                text: root.updates-checking ? "Checking…" : "Check for Updates";
+                                color: root.updates-checking ? Theme.status-suspicious : Theme.text-primary;
+                                font-size: 12px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            upd_ta := TouchArea {
+                                enabled: !root.updates-checking;
+                                mouse-cursor: root.updates-checking ? default : pointer;
+                                clicked => { root.check-updates(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -429,10 +429,16 @@ FodyWeavers.xsd
 *.msix
 *.msp
 
-# Local reference and caches
-lrcget/
+# Local virtual environments and caches
 .venv/
 venv/
 ENV/
 .pytest_cache/
+
+# Rust build output
+target/
+
+# Editor and tool caches
+.freebuff/
+.kilo/
 

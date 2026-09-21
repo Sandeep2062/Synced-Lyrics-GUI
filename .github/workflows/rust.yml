@@ -1,0 +1,146 @@
+name: Rust CI & Release
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux audio dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+      - name: Check desktop
+        run: cargo check -p lyrics-desktop
+
+  package:
+    name: Package (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev file
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release -p lyrics-desktop
+
+      # ---------------------------------------------------------------------
+      # Windows packaging: Inno Setup Installer + Portable Zip
+      # ---------------------------------------------------------------------
+      - name: Package Windows artifacts
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          
+          # 1. Build Inno Setup Installer
+          Write-Host "Compiling Inno Setup installer..."
+          if (Get-Command iscc -ErrorAction SilentlyContinue) {
+              iscc packaging/windows/installer.iss
+          } elseif (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") {
+              & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging/windows/installer.iss
+          } else {
+              Write-Host "Installing Inno Setup via Chocolatey..."
+              choco install innosetup --no-progress
+              & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging/windows/installer.iss
+          }
+
+          # 2. Build Portable Zip (with portable.dat to activate portable mode)
+          Write-Host "Creating Windows portable package..."
+          $portableDir = "build/windows/portable"
+          New-Item -ItemType Directory -Force -Path $portableDir
+          Copy-Item target/release/lyrics-desktop.exe $portableDir/
+          Copy-Item LICENSE $portableDir/
+          Copy-Item README.md $portableDir/
+          New-Item -ItemType File -Force -Path "$portableDir/portable.dat"
+          Compress-Archive -Path "$portableDir/*" -DestinationPath dist/Synced-Lyrics-windows-x86_64-portable.zip
+
+      # ---------------------------------------------------------------------
+      # macOS packaging: .dmg Installer + Portable .tar.gz
+      # ---------------------------------------------------------------------
+      - name: Package macOS artifacts
+        if: matrix.platform == 'macos'
+        run: |
+          chmod +x packaging/macos/build-macos.sh
+          ./packaging/macos/build-macos.sh
+
+      # ---------------------------------------------------------------------
+      # Linux packaging: .deb Installer + .AppImage + Portable .tar.gz
+      # ---------------------------------------------------------------------
+      - name: Package Linux artifacts
+        if: matrix.platform == 'linux'
+        run: |
+          chmod +x packaging/linux/build-linux.sh
+          ./packaging/linux/build-linux.sh
+
+      - name: Upload platform packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.platform }}
+          path: dist/*
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all platform packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

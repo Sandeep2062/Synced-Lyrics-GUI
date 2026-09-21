@@ -1,0 +1,74 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+
+export struct LyricLine {
+    timestamp: float,
+    text: string,
+}
+
+export component LyricsDrawer inherits Rectangle {
+    background: Theme.bg-surface;
+    
+    in-out property <bool> drawer-visible: false;
+    in-out property <int> active-line-index: -1;
+    in-out property <[LyricLine]> lines: [];
+    
+    callback seek-to-line(int);
+    callback copy-lyrics();
+    callback toggle();
+
+    VerticalLayout {
+        // Drag handle bar
+        Rectangle {
+            height: 24px;
+            Rectangle {
+                width: 40px;
+                height: 4px;
+                background: Theme.bg-card;
+                border-radius: 2px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+            TouchArea {
+                clicked => { root.toggle(); }
+            }
+        }
+        
+        Rectangle {
+            ListView {
+                for line[idx] in root.lines: Rectangle {
+                    height: 40px;
+                    Text {
+                        text: line.text;
+                        color: idx == root.active-line-index ? Theme.text-primary : (idx < root.active-line-index ? Theme.text-dim : Theme.text-muted);
+                        font-size: idx == root.active-line-index ? 17px : 14px;
+                        font-weight: idx == root.active-line-index ? 700 : 400;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.seek-to-line(idx); }
+                    }
+                }
+            }
+            
+            // Copy button
+            Rectangle {
+                x: parent.width - 40px - Theme.spacing-md;
+                y: parent.height - 40px - Theme.spacing-md;
+                width: 40px;
+                height: 40px;
+                background: Theme.bg-card;
+                border-radius: 20px;
+                Text {
+                    text: "📋";
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.copy-lyrics(); }
+                }
+            }
+        }
+    }
+}

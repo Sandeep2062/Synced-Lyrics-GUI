@@ -1,0 +1,44 @@
+export global Theme {
+    // Colors
+    //
+    // The app is deliberately painted on true black: every large surface is
+    // #000000 and panels are told apart by their 1px strokes, not by a lighter
+    // fill. Only the transient interaction states (hover/pressed) and the
+    // artwork placeholder lift off the black, because a control that cannot be
+    // seen cannot be used.
+    out property <color> bg-primary: #000000;
+    out property <color> bg-surface: #000000;
+    out property <color> bg-card: #000000;
+    out property <color> bg-toolbar: #000000;
+    out property <color> bg-hover: #0E1017;
+    out property <color> bg-active: #161922;
+    out property <color> bg-elevated: #08090D;
+    out property <color> accent-violet: #8B5CF6;
+    out property <color> accent-violet-strong: #7C3AED;
+    out property <color> accent-violet-soft: #221B3D;
+    out property <color> accent-cyan: #06B6D4;
+    out property <color> text-primary: #F4F7FB;
+    out property <color> text-muted: #94A3B8;
+    out property <color> text-dim: #475569;
+    out property <color> status-synced: #34D399;
+    out property <color> status-plain: #38BDF8;
+    out property <color> status-missing: #FB7185;
+    out property <color> status-suspicious: #FBBF24;
+    out property <color> divider: #252932;
+    out property <color> stroke-soft: #202434;
+    out property <color> stroke-strong: #3A4258;
+    out property <color> track-idle: #4A5170;
+    // Sizing
+    out property <length> header-height: 54px;
+    out property <length> player-height: 92px;
+    out property <length> radius-sm: 6px;
+    out property <length> radius-md: 10px;
+    out property <length> radius-lg: 16px;
+    out property <length> spacing-sm: 8px;
+    out property <length> spacing-md: 16px;
+    out property <length> spacing-lg: 24px;
+    // Motion — shared durations keep every interaction feeling like one app.
+    out property <duration> motion-fast: 110ms;
+    out property <duration> motion-base: 180ms;
+    out property <duration> motion-slow: 300ms;
+}

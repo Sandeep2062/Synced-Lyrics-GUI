@@ -1,0 +1,338 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+import { CoverTile, FilterChip, IconButton, StatusPill, TextField } from "components.slint";
+
+export struct TrackData {
+    // The audio file this row is about. Not drawn: it is how a thumbnail that
+    // arrives later finds the rows that are waiting for it.
+    path: string,
+    artist: string,
+    title: string,
+    album: string,
+    duration: string,
+    status: string,  // "synced", "plain", "missing", "suspicious"
+    has-lyrics: bool,
+    cover: image,
+    has-cover: bool,
+}
+
+export component TracksView inherits Rectangle {
+    in-out property <[TrackData]> tracks: [];
+    in-out property <string> search-text: "";
+    in-out property <int> status-filter: 0;
+    in-out property <string> summary: "";
+
+    callback select-track(int);
+    callback play-track(int);
+    callback fetch-track(int);
+    callback search-changed(string);
+    callback filter-changed(int);
+
+    // Column geometry — the header and the rows share these so nothing drifts.
+    private property <length> row-padding: 14px;
+    private property <length> column-gap: 12px;
+    private property <length> status-column: 130px;
+    private property <length> action-column: 150px;
+
+    private property <[string]> filter-labels: ["All", "Missing", "Plain", "Synced"];
+    private property <bool> filtered: root.search-text != "" || root.status-filter != 0;
+
+    background: Theme.bg-primary;
+
+    function clear-filters() {
+        root.search-text = "";
+        root.status-filter = 0;
+        root.search-changed("");
+        root.filter-changed(0);
+    }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: 12px;
+
+        // Top Toolbar
+        HorizontalLayout {
+            spacing: 12px;
+            height: 34px;
+
+            TextField {
+                width: 300px;
+                placeholder: "Search tracks, artists, albums...";
+                with-search-icon: true;
+                text <=> root.search-text;
+                edited(t) => { root.search-changed(t); }
+            }
+
+            // Status filter
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                for filter-label[i] in root.filter-labels: FilterChip {
+                    label: filter-label;
+                    selected: root.status-filter == i;
+                    clicked => {
+                        root.status-filter = i;
+                        root.filter-changed(i);
+                    }
+                }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            // Summary pill
+            if root.summary != "": Rectangle {
+                height: 26px;
+                background: #000000;
+                border-radius: 13px;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    alignment: center;
+                    Text {
+                        text: root.summary;
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+
+        // Table Header
+        Rectangle {
+            height: 28px;
+            background: #000000;
+            border-radius: Theme.radius-sm;
+
+            HorizontalLayout {
+                padding-left: root.row-padding;
+                padding-right: root.row-padding;
+                spacing: root.column-gap;
+
+                Text {
+                    horizontal-stretch: 1;
+                    text: "TRACK";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    width: root.status-column;
+                    text: "STATUS";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                Text {
+                    width: root.action-column;
+                    text: "ACTIONS";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Empty state: nothing matches the active filters
+        if root.tracks.length == 0 && root.filtered: VerticalLayout {
+            alignment: center;
+            spacing: 10px;
+
+            Rectangle { height: 60px; }
+
+            Text {
+                text: "No Matches";
+                color: Theme.text-primary;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "No tracks match the current search or status filter.";
+                color: Theme.text-muted;
+                font-size: 13px;
+                horizontal-alignment: center;
+            }
+
+            Rectangle {
+                width: 116px;
+                height: 30px;
+                x: (parent.width - self.width) / 2;
+                border-radius: 15px;
+                background: clear_ta.has-hover ? Theme.accent-violet-soft : #000000;
+                border-width: 1px;
+                border-color: clear_ta.has-hover ? Theme.accent-violet : Theme.stroke-soft;
+                animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                Text {
+                    text: "Clear filters";
+                    color: Theme.text-primary;
+                    font-size: 12px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                clear_ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.clear-filters(); }
+                }
+            }
+        }
+
+        // Empty state: the library itself is empty
+        if root.tracks.length == 0 && !root.filtered: VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+
+            Rectangle { height: 60px; }
+
+            // A fixed-size child of a layout is start-aligned, so centre it explicitly.
+            HorizontalLayout {
+                width: 100%;
+                alignment: center;
+
+                Image {
+                    source: @image-url("../assets/music_note.svg");
+                    width: 48px;
+                    height: 48px;
+                    colorize: Theme.text-dim;
+                }
+            }
+
+            Text {
+                text: "No Tracks Found";
+                color: Theme.text-primary;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "Use \"Manage Directories\" in the top right to scan your local music library.";
+                color: Theme.text-muted;
+                font-size: 13px;
+                horizontal-alignment: center;
+            }
+        }
+
+        // Track List
+        if root.tracks.length > 0: ListView {
+            for track[idx] in root.tracks: Rectangle {
+                height: 64px;
+                border-radius: Theme.radius-sm;
+                background: row_ta.pressed
+                    ? Theme.bg-active
+                    : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? #000000 : transparent));
+                animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                // Declared before the content so the row-sized hit area sits *behind*
+                // the play/download buttons and cannot swallow their clicks.
+                row_ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.select-track(idx); }
+                }
+
+                HorizontalLayout {
+                    padding-left: root.row-padding;
+                    padding-right: root.row-padding;
+                    spacing: root.column-gap;
+
+                    // Left Column: Cover + Title + Artist/Album
+                    HorizontalLayout {
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        spacing: 12px;
+                        alignment: start;
+
+                        CoverTile {
+                            cover: track.cover;
+                            has-cover: track.has-cover;
+                            tile-size: 44px;
+                            icon-size: 22px;
+                            tile-radius: 8px;
+                        }
+
+                        VerticalLayout {
+                            vertical-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+                            Text {
+                                text: track.title;
+                                color: row_ta.has-hover ? #FFFFFF : Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 600;
+                                overflow: elide;
+                                animate color { duration: Theme.motion-fast; easing: ease-out; }
+                            }
+                            Text {
+                                text: track.artist + "  •  " + track.album;
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                overflow: elide;
+                            }
+                        }
+                    }
+
+                    // Center Column: Status Badge
+                    StatusPill {
+                        status: track.status;
+                        column-width: root.status-column;
+                    }
+
+                    // Right Column: Duration + Actions
+                    HorizontalLayout {
+                        width: root.action-column;
+                        vertical-stretch: 1;
+                        alignment: end;
+                        spacing: 8px;
+
+                        Text {
+                            text: track.duration;
+                            color: Theme.text-muted;
+                            font-size: 13px;
+                            font-weight: 500;
+                            width: 44px;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                        }
+
+                        IconButton {
+                            icon: @image-url("../assets/track_play.svg");
+                            button-size: 30px;
+                            icon-size: 13px;
+                            icon-color: Theme.text-muted;
+                            hover-border: #4A5478;
+                            clicked => { root.play-track(idx); }
+                        }
+
+                        IconButton {
+                            icon: @image-url("../assets/download.svg");
+                            button-size: 30px;
+                            icon-size: 14px;
+                            icon-color: Theme.accent-violet;
+                            icon-hover-color: #C4B5FD;
+                            hover-border: Theme.accent-violet;
+                            clicked => { root.fetch-track(idx); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

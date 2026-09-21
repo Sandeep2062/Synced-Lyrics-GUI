@@ -1,0 +1,212 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+import { IconButton } from "components.slint";
+
+// The library's folders live here rather than on the settings screen, because
+// adding or removing one is an action about the library, not a preference.
+//
+// Drawn on top of the whole window: on a first run, when there is nothing to
+// scan yet, this is the only thing the user can interact with until at least
+// one folder exists.
+export component ManageDirectoriesDialog inherits Rectangle {
+    in-out property <[string]> directories: [];
+    /// When there is no folder yet there is nothing to go back to, so the
+    /// dialog offers no way out — only "Add Music Folder".
+    private property <bool> has-directories: root.directories.length > 0;
+
+    callback add-directory();
+    callback remove-directory(int);
+    callback close();
+
+    background: #000000D9;
+
+    // Swallows every click that misses the card, so the window behind this
+    // overlay cannot be operated while it is open.
+    TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    card := Rectangle {
+        width: 540px;
+        height: min(480px, parent.height - 72px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: #05060A;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.stroke-strong;
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 14px;
+
+            // Header
+            HorizontalLayout {
+                height: 34px;
+                spacing: 10px;
+
+                Image {
+                    source: @image-url("../assets/folder_add.svg");
+                    width: 18px;
+                    height: 18px;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: "Music Directories";
+                        color: Theme.text-primary;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.has-directories
+                            ? "Every folder here is scanned for tracks and lyrics."
+                            : "Add a music folder to build your library.";
+                        color: Theme.text-muted;
+                        font-size: 11px;
+                    }
+                }
+
+                if root.has-directories: IconButton {
+                    icon: @image-url("../assets/close.svg");
+                    icon-size: 14px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: #FF4D6D;
+                    hover-border: #E11D48;
+                    clicked => { root.close(); }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            // Folder list
+            if root.has-directories: ListView {
+                vertical-stretch: 1;
+                for dir[i] in root.directories: Rectangle {
+                    height: 46px;
+                    border-radius: Theme.radius-sm;
+                    background: row_ta.has-hover ? Theme.bg-hover : transparent;
+
+                    animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                    row_ta := TouchArea { }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 8px;
+                        spacing: 10px;
+
+                        Image {
+                            source: @image-url("../assets/folder_add.svg");
+                            width: 15px;
+                            height: 15px;
+                            y: (parent.height - self.height) / 2;
+                        }
+
+                        Text {
+                            horizontal-stretch: 1;
+                            text: dir;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        IconButton {
+                            icon: @image-url("../assets/close.svg");
+                            button-size: 28px;
+                            icon-size: 12px;
+                            icon-color: Theme.text-dim;
+                            icon-hover-color: #FF4D6D;
+                            hover-border: #E11D48;
+                            clicked => { root.remove-directory(i); }
+                        }
+                    }
+                }
+            }
+
+            if !root.has-directories: VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                spacing: 10px;
+
+                HorizontalLayout {
+                    width: 100%;
+                    alignment: center;
+                    Image {
+                        source: @image-url("../assets/music_note.svg");
+                        width: 40px;
+                        height: 40px;
+                        colorize: Theme.text-dim;
+                    }
+                }
+
+                Text {
+                    text: "No folders yet";
+                    color: Theme.text-primary;
+                    font-size: 15px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Synced Lyrics scans local folders for audio files and their .lrc files.";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+
+            // Footer
+            HorizontalLayout {
+                height: 34px;
+                spacing: 12px;
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Rectangle {
+                    width: 168px;
+                    height: 34px;
+                    border-radius: 17px;
+                    background: add_ta.pressed
+                        ? Theme.accent-violet-strong
+                        : (add_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                    animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 7px;
+                        Image {
+                            source: @image-url("../assets/folder_add.svg");
+                            y: (parent.height - self.height) / 2;
+                            width: 15px;
+                            height: 15px;
+                            colorize: #FFFFFF;
+                        }
+                        Text {
+                            text: "Add Music Folder";
+                            color: #FFFFFF;
+                            font-size: 12px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    add_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.add-directory(); }
+                    }
+                }
+            }
+        }
+    }
+}

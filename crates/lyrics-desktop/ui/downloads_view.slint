@@ -1,0 +1,149 @@
+import { Theme } from "theme.slint";
+import { ListView } from "std-widgets.slint";
+
+export struct ProviderStatus {
+    name: string,
+    status: string,  // "idle", "searching", "found", "not-found", "rate-limited", "error"
+}
+
+export struct DownloadStats {
+    synced: int,
+    plain: int,
+    kept: int,
+    not-found: int,
+    errors: int,
+}
+
+export component DownloadsView inherits Rectangle {
+    in-out property <float> progress: 0.0;
+    in-out property <string> progress-text: "0/0";
+    in-out property <string> eta-text: "ETA: --:--";
+    in-out property <string> current-track: "";
+    in-out property <[ProviderStatus]> providers: [];
+    in-out property <[string]> logs: [];
+    in-out property <DownloadStats> stats: { synced: 0, plain: 0, kept: 0, not-found: 0, errors: 0 };
+    in-out property <bool> is-active: false;
+
+    callback pause-resume();
+    callback stop();
+
+    VerticalLayout {
+        padding: Theme.spacing-lg;
+        spacing: Theme.spacing-lg;
+
+        Text { text: "Batch Download Progress"; color: Theme.text-primary; font-size: 22px; font-weight: 700; }
+
+        // Progress
+        VerticalLayout {
+            spacing: 8px;
+            Rectangle {
+                height: 8px;
+                background: Theme.bg-card;
+                border-radius: 4px;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.progress;
+                    height: parent.height;
+                    background: Theme.accent-violet;
+                    border-radius: 4px;
+                }
+            }
+            HorizontalLayout {
+                alignment: space-between;
+                Text { text: Math.round(root.progress * 100) + "%"; color: Theme.text-primary; font-size: 14px; }
+                Text { text: root.progress-text; color: Theme.text-muted; font-size: 14px; }
+                Text { text: root.eta-text; color: Theme.text-muted; font-size: 14px; }
+            }
+        }
+
+        Text {
+            text: root.is-active ? ("🎵 Processing: " + root.current-track) : (root.current-track != "" ? root.current-track : "Idle — ready to download");
+            color: root.is-active ? Theme.accent-cyan : Theme.text-dim;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        // Providers
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            for p in root.providers: Rectangle {
+                height: 32px;
+                background: Theme.bg-card;
+                border-radius: 16px;
+                
+                HorizontalLayout {
+                    padding-left: 16px; padding-right: 16px;
+                    spacing: 8px;
+                    alignment: center;
+                    Rectangle {
+                        width: 8px; height: 8px; border-radius: 4px;
+                        background: p.status == "searching" ? Theme.accent-cyan :
+                                    p.status == "found" ? Theme.status-synced :
+                                    p.status == "not-found" ? Theme.text-dim :
+                                    p.status == "rate-limited" ? Theme.status-suspicious :
+                                    p.status == "error" ? Theme.status-missing : Theme.text-muted;
+                    }
+                    Text { text: p.name; color: Theme.text-primary; vertical-alignment: center; }
+                }
+            }
+        }
+
+        // Stats
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            Text { text: "Synced: " + root.stats.synced; color: Theme.status-synced; font-weight: 600; }
+            Text { text: "Plain: " + root.stats.plain; color: Theme.status-plain; font-weight: 600; }
+            Text { text: "Kept: " + root.stats.kept; color: Theme.text-muted; font-weight: 600; }
+            Text { text: "Not Found: " + root.stats.not-found; color: Theme.text-dim; font-weight: 600; }
+            Text { text: "Errors: " + root.stats.errors; color: Theme.status-missing; font-weight: 600; }
+        }
+
+        // Logs
+        Rectangle {
+            background: Theme.bg-surface;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: #1A1D28;
+            
+            if root.logs.length == 0: VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "No activity logs yet. Click \"Download\" or fetch lyrics for any track to begin.";
+                    color: Theme.text-dim;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            if root.logs.length > 0: ListView {
+                for log in root.logs: Text {
+                    text: log;
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                }
+            }
+        }
+
+        // Controls
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.spacing-md;
+            
+            Rectangle {
+                width: 100px; height: 36px;
+                background: Theme.accent-violet;
+                border-radius: Theme.radius-sm;
+                Text { text: root.is-active ? "Pause" : "Resume"; color: #FFFFFF; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { clicked => { root.pause-resume(); } }
+            }
+            
+            Rectangle {
+                width: 100px; height: 36px;
+                background: Theme.status-missing;
+                border-radius: Theme.radius-sm;
+                Text { text: "Stop"; color: #FFFFFF; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { clicked => { root.stop(); } }
+            }
+        }
+    }
+}

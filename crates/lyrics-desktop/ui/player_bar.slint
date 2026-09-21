@@ -1,0 +1,380 @@
+import { Theme } from "theme.slint";
+import { CoverTile, IconButton, VolumeSlider } from "components.slint";
+
+export component PlayerBar inherits Rectangle {
+    height: Theme.player-height;
+    background: Theme.bg-toolbar;
+
+    in-out property <string> track-title: "";
+    in-out property <string> track-subtitle: "";
+    in-out property <string> position-text: "00:00";
+    in-out property <string> duration-text: "00:00";
+    in-out property <string> playback-icon: "▶";
+    in-out property <float> seek-position: 0.0;
+    in-out property <float> volume: 0.7;
+    in-out property <bool> is-playing: false;
+    in-out property <bool> has-track: false;
+    in-out property <bool> has-lyrics: false;
+    in-out property <image> track-cover;
+    in-out property <bool> has-cover: false;
+    in-out property <[float]> waveform-data: [];
+    in-out property <bool> is-lyrics-open: false;
+
+    callback play-pause();
+    callback seek(float);
+    callback rewind();
+    callback forward();
+    callback prev-track();
+    callback next-track();
+    callback volume-changed(float);
+    callback toggle-lyrics();
+
+    private property <bool> scrubbable: root.has-track;
+
+    // Top divider border
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.divider;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-lg;
+        padding-right: Theme.spacing-lg;
+
+        // Left Column: Track Info
+        HorizontalLayout {
+            width: 320px;
+            vertical-stretch: 1;
+            alignment: start;
+            spacing: 12px;
+
+            CoverTile {
+                cover: root.track-cover;
+                has-cover: root.has-cover;
+                tile-size: 48px;
+                icon-size: 22px;
+                tile-radius: 8px;
+            }
+
+            VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+
+                Text {
+                    text: root.has-track ? root.track-title : "No Track Selected";
+                    color: root.has-track ? Theme.text-primary : Theme.text-dim;
+                    font-size: 14px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.has-track ? root.track-subtitle : "Select a track from the library to play";
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // Center Column: Transport & Scrubber
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 6px;
+
+            // Transport Buttons
+            HorizontalLayout {
+                alignment: center;
+                spacing: 10px;
+
+                IconButton {
+                    icon: @image-url("../assets/skip_prev.svg");
+                    button-size: 32px;
+                    icon-size: 16px;
+                    icon-hover-color: #FFFFFF;
+                    enabled: root.has-track;
+                    clicked => { root.prev-track(); }
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/rewind10.svg");
+                    button-size: 32px;
+                    icon-size: 19px;
+                    icon-hover-color: #FFFFFF;
+                    enabled: root.has-track;
+                    clicked => { root.rewind(); }
+                }
+
+                // Play / Pause
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 22px;
+                    border-width: 1px;
+                    opacity: root.has-track ? 1 : 0.55;
+                    background: root.is-playing
+                        ? (pp_ta.pressed ? #6D28D9 : (pp_ta.has-hover ? #9D72FF : Theme.accent-violet))
+                        : (pp_ta.pressed ? #232838 : (pp_ta.has-hover ? #282E42 : #1D2130));
+                    border-color: root.is-playing
+                        ? (pp_ta.has-hover ? #D6C2FF : #B892FF)
+                        : (pp_ta.has-hover ? #4A5478 : #363E56);
+
+                    animate background, border-color, opacity {
+                        duration: Theme.motion-base;
+                        easing: ease-out;
+                    }
+
+                    Image {
+                        source: root.is-playing
+                            ? @image-url("../assets/pause.svg")
+                            : @image-url("../assets/play.svg");
+                        width: 18px;
+                        height: 18px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        colorize: #FFFFFF;
+                    }
+
+                    pp_ta := TouchArea {
+                        enabled: root.has-track;
+                        mouse-cursor: root.has-track ? pointer : default;
+                        clicked => { root.play-pause(); }
+                    }
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/forward10.svg");
+                    button-size: 32px;
+                    icon-size: 19px;
+                    icon-hover-color: #FFFFFF;
+                    enabled: root.has-track;
+                    clicked => { root.forward(); }
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/skip_next.svg");
+                    button-size: 32px;
+                    icon-size: 16px;
+                    icon-hover-color: #FFFFFF;
+                    enabled: root.has-track;
+                    clicked => { root.next-track(); }
+                }
+            }
+
+            // Seek Bar Row
+            HorizontalLayout {
+                spacing: 12px;
+                height: 36px;
+
+                Text {
+                    text: root.position-text;
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    width: 40px;
+                    horizontal-alignment: right;
+                }
+
+                // Seek Bar Container (plain rail when paused, waveform when playing)
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 36px;
+                    background: transparent;
+                    clip: true;
+
+                    // Plain rail: shown when not playing (paused or idle)
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        opacity: root.is-playing ? 0 : 1;
+                        animate opacity { duration: Theme.motion-base; easing: ease-out; }
+
+                        Rectangle {
+                            width: 100%;
+                            height: 6px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 3px;
+                            background: #15171F;
+
+                            // Progress fill
+                            Rectangle {
+                                x: 0;
+                                y: 0;
+                                width: Math.min(parent.width, parent.width * Math.max(0.0, root.seek-position));
+                                height: parent.height;
+                                border-radius: 3px;
+                                background: seek_ta.has-hover ? #A78BFA : Theme.accent-violet;
+                                animate background { duration: Theme.motion-fast; }
+                            }
+
+                            // Scrubber thumb
+                            Rectangle {
+                                x: Math.max(0px, Math.min(parent.width - 12px, parent.width * root.seek-position - 6px));
+                                y: -3px;
+                                width: 12px;
+                                height: 12px;
+                                border-radius: 6px;
+                                background: #FFFFFF;
+                                visible: root.has-track;
+                            }
+                        }
+                    }
+
+                    // Active waveform: shown smoothly when playing!
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        opacity: (root.has-track && root.is-playing) ? 1 : 0;
+                        animate opacity { duration: Theme.motion-base; easing: ease-out; }
+
+                        Rectangle {
+                            width: 100%;
+                            height: 100%;
+                            background: #050508;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: seek_ta.has-hover ? #2F354A : #1A1D28;
+                            clip: true;
+                            animate border-color { duration: Theme.motion-base; easing: ease-out; }
+
+                            HorizontalLayout {
+                                padding-left: 4px;
+                                padding-right: 4px;
+                                padding-top: 3px;
+                                padding-bottom: 3px;
+                                spacing: 1px;
+
+                                // Each bar's height is driven by the model (updated ~30 fps
+                                // from the live audio level). The transition smooths the
+                                // jump between frames so it reads as organic movement.
+                                for bar[idx] in root.waveform-data: Rectangle {
+                                    horizontal-stretch: 1;
+                                    height: Math.max(2px, parent.height * Math.max(0.06, bar));
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 1.5px;
+                                    background: ((idx + 0.5) / Math.max(1, root.waveform-data.length)) <= root.seek-position
+                                        ? (seek_ta.has-hover ? #B794F6 : Theme.accent-violet)
+                                        : (seek_ta.has-hover ? #282D42 : #181B28);
+                                    animate height { duration: 50ms; easing: ease-out; }
+                                }
+                            }
+
+                            // Playhead line
+                            Rectangle {
+                                x: Math.max(0px, Math.min(parent.width - 2px, parent.width * root.seek-position));
+                                y: 0;
+                                width: 2px;
+                                height: parent.height;
+                                border-radius: 1px;
+                                background: #FFFFFF;
+                            }
+                        }
+                    }
+
+                    seek_ta := TouchArea {
+                        enabled: root.scrubbable;
+                        mouse-cursor: root.scrubbable ? pointer : default;
+                        clicked => {
+                            root.seek(Math.min(1.0, Math.max(0.0, self.mouse-x / max(1px, self.width))));
+                        }
+                        moved => {
+                            if (self.pressed) {
+                                root.seek(Math.min(1.0, Math.max(0.0, self.mouse-x / max(1px, self.width))));
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.duration-text;
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    width: 40px;
+                }
+            }
+        }
+
+        // Right Column: Volume + Lyrics Toggle
+        HorizontalLayout {
+            width: 240px;
+            vertical-stretch: 1;
+            alignment: end;
+            spacing: 16px;
+
+            // Wrapped so the mixer row is centred in the bar's height.
+            VerticalLayout {
+                alignment: center;
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+
+                    Image {
+                        source: @image-url("../assets/volume.svg");
+                        width: 17px;
+                        height: 17px;
+                        y: (parent.height - self.height) / 2;
+                        colorize: root.volume <= 0.001 ? Theme.text-dim : Theme.text-muted;
+                    }
+
+                    VolumeSlider {
+                        width: 90px;
+                        value: root.volume;
+                        changed(v) => { root.volume-changed(v); }
+                    }
+                }
+            }
+
+            // Lyrics Toggle (only when the current song has lyrics)
+            if root.has-track && root.has-lyrics: VerticalLayout {
+                alignment: center;
+
+                Rectangle {
+                    width: 88px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: root.is-lyrics-open
+                        ? Theme.accent-violet-soft
+                        : (lyr_ta.pressed ? Theme.bg-active : (lyr_ta.has-hover ? #1B1E2C : #161824));
+                    border-width: 1px;
+                    border-color: root.is-lyrics-open
+                        ? Theme.accent-violet
+                        : (lyr_ta.has-hover ? Theme.stroke-strong : #282D3E);
+
+                    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+
+                        Image {
+                            source: @image-url("../assets/lyrics_icon.svg");
+                            y: (parent.height - self.height) / 2;
+                            width: 14px;
+                            height: 14px;
+                            colorize: root.is-lyrics-open ? #FFFFFF : Theme.text-primary;
+                        }
+
+                        Text {
+                            text: "Lyrics";
+                            color: root.is-lyrics-open ? #FFFFFF : Theme.text-primary;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    lyr_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.toggle-lyrics(); }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,369 @@
+import { Theme } from "theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { CoverTile, IconButton, StatusPill } from "components.slint";
+
+export struct LyricLine {
+    timestamp: float,
+    text: string,
+}
+
+export component SideLyricsPanel inherits Rectangle {
+    background: #000000;
+
+    in-out property <bool> is-open: false;
+    in-out property <int> active-line-index: -1;
+    in-out property <[LyricLine]> lines: [];
+    in-out property <string> plain-text: "";
+    in-out property <string> track-title: "";
+    in-out property <string> track-artist: "";
+    in-out property <image> track-cover;
+    in-out property <bool> has-cover: false;
+    in-out property <string> status: ""; // "synced", "plain", "missing"
+
+    // Every inactive line is exactly this tall, so the column can be scrolled
+    // to centre the active line with plain arithmetic. The height fits two
+    // wrapped lines: a long lyric must not be cut off halfway through.
+    private property <length> line-height: 52px;
+    private property <length> active-line-height: 68px;
+    // The active line is taller than the rest, so every line *after* it has to
+    // be pushed down by the difference. Without that, the taller active line
+    // overlaps its neighbour and the line below it renders clipped.
+    private property <length> active-growth: root.active-line-height - root.line-height;
+    private property <length> content-height:
+        root.lines.length * root.line-height + root.active-growth;
+    private property <length> max-scroll: max(0px, root.content-height - lyric_viewport.height);
+    private property <length> auto-scroll-offset: min(
+        root.max-scroll,
+        max(0px, root.active-line-index * root.line-height
+            + root.active-line-height / 2
+            - lyric_viewport.height / 2)
+    );
+    private property <length> manual-scroll-offset: 0px;
+    private property <bool> is-user-scrolled: false;
+    private property <length> scroll-offset: root.is-user-scrolled ? root.manual-scroll-offset : root.auto-scroll-offset;
+
+    function handle-scroll(delta-y: length) {
+        if (!root.is-user-scrolled) {
+            root.manual-scroll-offset = root.auto-scroll-offset;
+            root.is-user-scrolled = true;
+        }
+        root.manual-scroll-offset = max(0px, min(root.max-scroll, root.manual-scroll-offset - delta-y));
+    }
+
+    function resume-sync() {
+        root.is-user-scrolled = false;
+    }
+
+    changed track-title => {
+        root.is-user-scrolled = false;
+    }
+
+    callback seek-to-line(int);
+    callback copy-lyrics();
+    callback close-panel();
+    callback fetch-lyrics();
+
+    // Left border divider
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: #1C2030;
+    }
+
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 14px;
+        padding-bottom: 14px;
+        spacing: 12px;
+
+        // Top Header Bar
+        HorizontalLayout {
+            height: 44px;
+            alignment: space-between;
+            spacing: 8px;
+
+            HorizontalLayout {
+                horizontal-stretch: 1;
+                spacing: 10px;
+                alignment: start;
+
+                CoverTile {
+                    cover: root.track-cover;
+                    has-cover: root.has-cover;
+                    tile-size: 38px;
+                    icon-size: 17px;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text: root.track-title != "" ? root.track-title : "No Track";
+                        color: Theme.text-primary;
+                        font-size: 13px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.track-artist != "" ? root.track-artist : "Select a track";
+                        color: Theme.text-muted;
+                        font-size: 11px;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 6px;
+
+                if root.status != "": StatusPill { status: root.status; }
+
+                IconButton {
+                    icon: @image-url("../assets/copy.svg");
+                    icon-size: 15px;
+                    icon-color: Theme.text-muted;
+                    clicked => { root.copy-lyrics(); }
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/close.svg");
+                    icon-size: 14px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: #FF4D6D;
+                    hover-border: #E11D48;
+                    clicked => { root.close-panel(); }
+                }
+            }
+        }
+
+        // Horizontal divider under header
+        Rectangle {
+            height: 1px;
+            background: #181C28;
+        }
+
+        // Lyrics Body
+        lyric_viewport := Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            clip: true;
+
+            // Mode 1: Synced Lyrics
+            if root.lines.length > 0: Rectangle {
+                width: 100%;
+                height: 100%;
+                clip: true;
+
+                // Viewport TouchArea catches wheel events on empty spaces
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    scroll-event(e) => {
+                        root.handle-scroll(e.delta-y);
+                        EventResult.accept
+                    }
+                }
+
+                // There is deliberately no card, border or accent bar behind the
+                // active line: the emphasis is carried by the type itself, the
+                // way a karaoke lyric reads. A filled box fights the text it is
+                // supposed to frame, and on a long line it clips it.
+                for line[idx] in root.lines: Rectangle {
+                    x: 0;
+                    width: parent.width;
+                    y: idx * root.line-height
+                        - root.scroll-offset
+                        + (root.active-line-index >= 0 && idx > root.active-line-index
+                            ? root.active-growth : 0px);
+                    height: idx == root.active-line-index ? root.active-line-height : root.line-height;
+                    background: transparent;
+                    clip: true;
+
+                    animate y { duration: root.is-user-scrolled ? 0ms : Theme.motion-slow; easing: ease-out; }
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 4px;
+                        padding-bottom: 4px;
+                        alignment: start;
+
+                        Text {
+                            text: line.text;
+                            color: idx == root.active-line-index
+                                ? #FFFFFF
+                                : (line_ta.has-hover ? #DCE3EE
+                                : (idx < root.active-line-index ? Theme.text-dim : Theme.text-muted));
+                            font-size: idx == root.active-line-index ? 19px : 15px;
+                            font-weight: idx == root.active-line-index ? 700 : 500;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                            animate color, font-size { duration: Theme.motion-base; easing: ease-out; }
+                        }
+                    }
+
+                    line_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.resume-sync();
+                            root.seek-to-line(idx);
+                        }
+                        scroll-event(e) => {
+                            root.handle-scroll(e.delta-y);
+                            EventResult.accept
+                        }
+                    }
+                }
+            }
+
+            // The list dissolves into the background at both edges instead of
+            // being clipped off mid-glyph.
+            if root.lines.length > 0: Rectangle {
+                y: 0;
+                width: 100%;
+                height: 24px;
+                background: @linear-gradient(180deg, #000000ff 0%, #00000000 100%);
+            }
+
+            if root.lines.length > 0: Rectangle {
+                y: parent.height - self.height;
+                width: 100%;
+                height: 24px;
+                background: @linear-gradient(0deg, #000000ff 0%, #00000000 100%);
+            }
+
+            // Sync to Playback Floating Button
+            if root.lines.length > 0 && root.is-user-scrolled && root.active-line-index >= 0: Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: parent.height - self.height - 16px;
+                height: 32px;
+                width: 148px;
+                border-radius: 16px;
+                background: sync_ta.has-hover ? #7C3AED : #6D28D9;
+                border-width: 1px;
+                border-color: #8B5CF6;
+                drop-shadow-blur: 10px;
+                drop-shadow-color: #000000cc;
+                animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Image {
+                        source: @image-url("../assets/play.svg");
+                        width: 12px;
+                        height: 12px;
+                        colorize: #FFFFFF;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    Text {
+                        text: "Sync to Playback";
+                        color: #FFFFFF;
+                        font-size: 11px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+
+                sync_ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.resume-sync(); }
+                }
+            }
+
+            // Mode 2: Plain Lyrics
+            if root.lines.length == 0 && root.plain-text != "": ScrollView {
+                width: 100%;
+                height: 100%;
+                VerticalLayout {
+                    padding: 16px;
+                    Text {
+                        text: root.plain-text;
+                        color: #CBD5E1;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Mode 3: No Lyrics Available
+            if root.lines.length == 0 && root.plain-text == "": VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+
+                // A fixed-size child of a layout is start-aligned, so centre it explicitly.
+                HorizontalLayout {
+                    width: 100%;
+                    alignment: center;
+
+                    Image {
+                        source: @image-url("../assets/lyrics_icon.svg");
+                        width: 40px;
+                        height: 40px;
+                        colorize: Theme.text-dim;
+                    }
+                }
+
+                Text {
+                    text: "No Lyrics Available";
+                    color: Theme.text-primary;
+                    font-size: 14px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Fetch lyrics from online providers";
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle {
+                    width: 118px;
+                    height: 30px;
+                    border-radius: 15px;
+                    x: (parent.width - self.width) / 2;
+                    background: fetch_btn_ta.pressed
+                        ? Theme.accent-violet-strong
+                        : (fetch_btn_ta.has-hover ? #9D72FF : Theme.accent-violet);
+
+                    animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+
+                        Image {
+                            source: @image-url("../assets/download.svg");
+                            y: (parent.height - self.height) / 2;
+                            width: 13px;
+                            height: 13px;
+                            colorize: #FFFFFF;
+                        }
+
+                        Text {
+                            text: "Fetch Lyrics";
+                            color: #FFFFFF;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    fetch_btn_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.fetch-lyrics(); }
+                    }
+                }
+            }
+        }
+    }
+}

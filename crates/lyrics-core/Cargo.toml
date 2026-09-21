@@ -1,0 +1,18 @@
+[package]
+name = "lyrics-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Artwork decoding and the on-disk thumbnail index live here, next to the other
+# library data, so the desktop crate only has to turn pixels into images.
+image.workspace = true
+keyring.workspace = true
+lofty.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

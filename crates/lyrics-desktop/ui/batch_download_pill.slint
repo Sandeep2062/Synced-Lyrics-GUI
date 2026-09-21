@@ -1,0 +1,159 @@
+import { Theme } from "theme.slint";
+
+export component BatchDownloadPill inherits Rectangle {
+    in property <bool> is-running: false;
+    in property <bool> is-paused: false;
+    in property <bool> is-finished: false;
+    in property <float> progress: 0.0;
+    in property <string> progress-text: "";
+    in property <string> current-track: "";
+    in property <int> synced-count: 0;
+    in property <int> plain-count: 0;
+
+    callback clicked();
+    callback close();
+
+    width: 320px;
+    height: 46px;
+    border-radius: 23px;
+    background: ta.has-hover ? #0E121EFA : #070912F5;
+    border-width: 1px;
+    border-color: root.is-finished
+        ? #10B981
+        : (root.is-paused ? #F59E0B : (ta.has-hover ? #A855F7 : Theme.accent-violet));
+    drop-shadow-blur: 18px;
+    drop-shadow-color: #000000C0;
+    drop-shadow-offset-y: 6px;
+
+    animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 10px;
+        alignment: center;
+
+        // Left Icon Badge
+        Rectangle {
+            width: 30px;
+            height: 30px;
+            border-radius: 15px;
+            background: root.is-finished
+                ? #0D281E
+                : (root.is-paused ? #2B210F : #1A122E);
+            border-width: 1px;
+            border-color: root.is-finished
+                ? #10B981
+                : (root.is-paused ? #F59E0B : Theme.accent-violet);
+            y: (parent.height - self.height) / 2;
+
+            if !root.is-finished: Image {
+                source: root.is-paused ? @image-url("../assets/pause.svg") : @image-url("../assets/download.svg");
+                width: 14px;
+                height: 14px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                colorize: root.is-paused ? #F59E0B : Theme.accent-violet;
+            }
+
+            if root.is-finished: Text {
+                text: "✓";
+                color: #10B981;
+                font-size: 15px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Center Content Stack
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            // Header line: Action / Progress %
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: root.is-finished
+                        ? "Download Complete"
+                        : (root.is-paused
+                            ? ("Paused • " + Math.round(root.progress * 100) + "%")
+                            : ("Downloading • " + Math.round(root.progress * 100) + "%"));
+                    color: root.is-finished ? #10B981 : (root.is-paused ? #F59E0B : Theme.text-primary);
+                    font-size: 12px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                if !root.is-finished && root.progress-text != "": Text {
+                    text: "(" + root.progress-text + ")";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Subtitle line: Current track or stats
+            Text {
+                text: root.is-finished
+                    ? (root.synced-count + " synced, " + root.plain-count + " plain")
+                    : (root.current-track != "" ? root.current-track : "Searching providers...");
+                color: Theme.text-muted;
+                font-size: 10px;
+                font-weight: 500;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+
+        // Right Expand / Dismiss Action
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: action_ta.has-hover ? #252A3D : transparent;
+            y: (parent.height - self.height) / 2;
+
+            animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+            if !root.is-finished: Text {
+                text: "↗";
+                color: ta.has-hover ? #FFFFFF : Theme.text-muted;
+                font-size: 13px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if root.is-finished: Image {
+                source: @image-url("../assets/close.svg");
+                width: 10px;
+                height: 10px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                colorize: action_ta.has-hover ? #FF4D6D : Theme.text-dim;
+            }
+
+            action_ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if root.is-finished {
+                        root.close();
+                    } else {
+                        root.clicked();
+                    }
+                }
+            }
+        }
+    }
+
+    // Main touch area covering the whole pill (clicking opens dialog)
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
