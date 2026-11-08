@@ -162,14 +162,7 @@ pub fn is_synced(text: &str) -> bool {
     parse_timestamps(text).len() >= 3
 }
 
-pub fn titles_match(left: &str, right: &str) -> bool {
-    let left = normalize_title(left);
-    let right = normalize_title(right);
-    if left.is_empty() || right.is_empty() {
-        return false;
-    }
-    left.contains(&right) || right.contains(&left) || similarity(&left, &right) > 0.8
-}
+pub use crate::matching::{normalize_title, similarity, titles_match};
 
 pub fn audit_lrc(text: &str, duration_seconds: Option<f64>, title: &str) -> Option<LrcIssue> {
     if text.trim().is_empty() {
@@ -248,23 +241,6 @@ fn parse_timestamp(value: &str) -> Option<f64> {
 
 fn metadata_title(text: &str) -> Option<String> {
     parse_metadata(text).title
-}
-
-fn normalize_title(value: &str) -> String {
-    value
-        .to_ascii_lowercase()
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .collect()
-}
-
-fn similarity(left: &str, right: &str) -> f64 {
-    let common = left
-        .chars()
-        .zip(right.chars())
-        .filter(|(a, b)| a == b)
-        .count();
-    (common * 2) as f64 / (left.chars().count() + right.chars().count()) as f64
 }
 
 #[cfg(test)]

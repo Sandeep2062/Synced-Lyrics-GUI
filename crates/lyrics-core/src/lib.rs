@@ -5,6 +5,7 @@ pub mod db;
 pub mod download;
 pub mod fs;
 pub mod lrc;
+pub mod matching;
 pub mod model;
 pub mod providers;
 pub mod rate_limiter;
@@ -23,6 +24,10 @@ pub use fs::{write_atomic, FileStoreError};
 pub use lrc::{
     audit_lrc, is_synced, parse_lines, parse_metadata, parse_timestamps, titles_match, LrcIssue,
     LrcLine, LrcMetadata,
+};
+pub use matching::{
+    clean_title, normalize_title, score_candidate, score_duration, similarity, Candidate,
+    MatchScore,
 };
 pub use model::{DownloadMode, LyricsStatus, Track};
 pub use providers::genius::GeniusProvider;
