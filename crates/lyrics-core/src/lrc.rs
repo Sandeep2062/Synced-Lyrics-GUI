@@ -236,7 +236,11 @@ fn parse_timestamp(value: &str) -> Option<f64> {
             }
             let fraction = fraction_str.parse::<f64>().ok()?;
             let frac_sec = fraction / 10f64.powi(fraction_str.len() as i32);
-            Some(minutes as f64 * 60.0 + seconds as f64 + frac_sec)
+            let total = minutes as f64 * 60.0 + seconds as f64 + frac_sec;
+            if !total.is_finite() {
+                return None;
+            }
+            Some(total)
         }
         _ => None,
     }
@@ -459,8 +463,15 @@ mod tests {
             let _ = audit_lrc(&s, Some(120.0), "Song");
             let _ = titles_match(&s, "Song");
 
-            // Timestamps in parse_lines should match parsed lines count
-            assert_eq!(lines.len(), lines.len());
+            // Timestamps must be valid finite non-negative numbers
+            for line in &lines {
+                assert!(line.timestamp_seconds.is_finite());
+                assert!(line.timestamp_seconds >= 0.0);
+            }
+            for &ts in &timestamps {
+                assert!(ts.is_finite());
+                assert!(ts >= 0.0);
+            }
             // Lines should be in ascending timestamp order
             for window in lines.windows(2) {
                 assert!(window[0].timestamp_seconds <= window[1].timestamp_seconds);
