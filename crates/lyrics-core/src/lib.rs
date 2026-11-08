@@ -21,7 +21,8 @@ pub use db::{LibraryDb, RepositoryError};
 pub use download::{download_track, DownloadEvent, DownloadOutcome};
 pub use fs::{write_atomic, FileStoreError};
 pub use lrc::{
-    audit_lrc, is_synced, parse_lines, parse_timestamps, titles_match, LrcIssue, LrcLine,
+    audit_lrc, is_synced, parse_lines, parse_metadata, parse_timestamps, titles_match, LrcIssue,
+    LrcLine, LrcMetadata,
 };
 pub use model::{DownloadMode, LyricsStatus, Track};
 pub use providers::genius::GeniusProvider;
