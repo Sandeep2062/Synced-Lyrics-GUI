@@ -242,15 +242,13 @@ pub fn parse_enhanced_words(
 
     current_word_text.push_str(remaining);
     let final_trimmed = current_word_text.trim();
-    if !final_trimmed.is_empty() {
-        if has_word_timestamp {
-            let ts = current_ts.unwrap_or(line_ts);
-            words.push(LrcWord {
-                timestamp_seconds: ts,
-                text: final_trimmed.to_string(),
-            });
-            clean_text_parts.push(final_trimmed.to_string());
-        }
+    if !final_trimmed.is_empty() && has_word_timestamp {
+        let ts = current_ts.unwrap_or(line_ts);
+        words.push(LrcWord {
+            timestamp_seconds: ts,
+            text: final_trimmed.to_string(),
+        });
+        clean_text_parts.push(final_trimmed.to_string());
     }
 
     if has_word_timestamp {

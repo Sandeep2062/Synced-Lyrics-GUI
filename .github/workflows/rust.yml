@@ -2,47 +2,20 @@ name: Rust CI & Release
 
 on:
   push:
-    branches: [main]
     tags:
       - 'v*'
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libfontconfig1-dev pkg-config libxkbcommon-dev
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Test workspace
-        run: cargo test --workspace
-
-      - name: Check desktop
-        run: cargo check -p lyrics-desktop
-
-  package:
-    name: Package (${{ matrix.os }})
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: test
+  build:
+    name: Build & Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -64,9 +37,20 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy check
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test workspace
+        run: cargo test --workspace
 
       - name: Build release binary
         run: cargo build --release -p lyrics-desktop
@@ -125,11 +109,12 @@ jobs:
         with:
           name: packages-${{ matrix.platform }}
           path: dist/*
+          retention-days: 1
 
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write

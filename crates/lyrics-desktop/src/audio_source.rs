@@ -251,10 +251,7 @@ impl Source for FileSource {
                 },
             )
             .map_err(|e| {
-                SeekError::Other(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Seek failed: {e}"),
-                )))
+                SeekError::Other(Box::new(std::io::Error::other(format!("Seek failed: {e}"))))
             })?;
 
         self.decoder.reset();

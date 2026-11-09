@@ -429,6 +429,7 @@ impl LibraryDb {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn update_batch_job_item_progress(
         &self,
         job_id: i64,
@@ -943,7 +944,7 @@ mod tests {
             suspicious_reason: Some("Offset: +2.00s".to_string()),
             lyrics_offset_ms: 200,
         };
-        db.upsert_tracks(&[track.clone()]).unwrap();
+        db.upsert_tracks(std::slice::from_ref(&track)).unwrap();
 
         let loaded = db.track("/music/test.mp3").unwrap().unwrap();
         assert_eq!(loaded.status, LyricsStatus::Suspicious);

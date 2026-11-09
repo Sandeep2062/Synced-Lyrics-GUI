@@ -311,11 +311,12 @@ pub fn normalize_title(value: &str) -> String {
         if c.is_alphanumeric() || is_non_latin_script_mark(c) {
             normalized.push(c);
             last_was_space = false;
-        } else if c.is_whitespace() || c == '-' || c == '_' || c == '/' {
-            if !last_was_space && !normalized.is_empty() {
-                normalized.push(' ');
-                last_was_space = true;
-            }
+        } else if (c.is_whitespace() || c == '-' || c == '_' || c == '/')
+            && !last_was_space
+            && !normalized.is_empty()
+        {
+            normalized.push(' ');
+            last_was_space = true;
         }
     }
 

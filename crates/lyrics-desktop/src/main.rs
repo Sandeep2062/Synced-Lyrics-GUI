@@ -1951,6 +1951,7 @@ fn play_prev_track(
 /// Plays row `row_idx` of the album or artist detail list. Both lists are built
 /// from `all_tracks`, so the row index maps through the indices recorded when
 /// the list was built.
+#[allow(clippy::too_many_arguments)]
 fn play_detail_row(
     window: &slint::Weak<MainWindow>,
     state: &Arc<Mutex<AppState>>,
@@ -1995,6 +1996,7 @@ fn play_detail_row(
 fn main() -> Result<(), slint::PlatformError> {
     let window = MainWindow::new()?;
     window.show()?;
+    #[allow(clippy::arc_with_non_send_sync)]
     let audio = Arc::new(Mutex::new(RodioAudioEngine::new()));
     let lyric_state = Arc::new(Mutex::new(Vec::<LrcLine>::new()));
     let app_state = Arc::new(Mutex::new(AppState::new()));
@@ -2754,7 +2756,7 @@ fn main() -> Result<(), slint::PlatformError> {
                                 p.label(),
                                 if synced { "synced" } else { "plain" }
                             ));
-                        } else if let Some(_) = err {
+                        } else if err.is_some() {
                             parts.push(format!("⚠ {} (error)", p.label()));
                         } else {
                             parts.push(format!("✗ {}", p.label()));
@@ -3437,8 +3439,10 @@ fn main() -> Result<(), slint::PlatformError> {
                             is_success = true;
                         }
                     } else {
-                        let mut dl_opts = DownloadOptions::default();
-                        dl_opts.backup_before_overwrite = backup_enabled;
+                        let dl_opts = DownloadOptions {
+                            backup_before_overwrite: backup_enabled,
+                            ..Default::default()
+                        };
                         let mode = if item.issue_category == "Missing" {
                             DownloadMode::MissingOnly
                         } else {
@@ -3446,31 +3450,28 @@ fn main() -> Result<(), slint::PlatformError> {
                         };
 
                         if let Ok(providers) = providers_for_settings(&db, &track, &settings) {
-                            if let Ok(outcome) = download_track_with_options(
-                                &track,
-                                mode,
-                                &providers,
-                                &cancelled,
-                                dl_opts,
-                                |_| {},
-                            ) {
-                                match outcome {
-                                    DownloadOutcome::Downloaded { provider, synced } => {
-                                        chosen_provider = provider.label().to_string();
-                                        let status = if synced {
-                                            LyricsStatus::Synced
-                                        } else {
-                                            LyricsStatus::Plain
-                                        };
-                                        let _ = db.update_lyrics_status(
-                                            &audio_path,
-                                            status,
-                                            Some(provider.label()),
-                                        );
-                                        is_success = true;
-                                    }
-                                    _ => {}
-                                }
+                            if let Ok(DownloadOutcome::Downloaded { provider, synced }) =
+                                download_track_with_options(
+                                    &track,
+                                    mode,
+                                    &providers,
+                                    &cancelled,
+                                    dl_opts,
+                                    |_| {},
+                                )
+                            {
+                                chosen_provider = provider.label().to_string();
+                                let status = if synced {
+                                    LyricsStatus::Synced
+                                } else {
+                                    LyricsStatus::Plain
+                                };
+                                let _ = db.update_lyrics_status(
+                                    &audio_path,
+                                    status,
+                                    Some(provider.label()),
+                                );
+                                is_success = true;
                             }
                         }
                     }
@@ -3483,7 +3484,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         Some(&chosen_provider),
                         chosen_score,
                         Some(&chosen_reason),
-                        Some(&item.diff_text.to_string()),
+                        Some(item.diff_text.as_str()),
                         None,
                     );
                 }
@@ -3647,35 +3648,34 @@ fn main() -> Result<(), slint::PlatformError> {
                             is_success = true;
                         }
                     } else {
-                        let mut dl_opts = DownloadOptions::default();
-                        dl_opts.backup_before_overwrite = backup_enabled;
+                        let dl_opts = DownloadOptions {
+                            backup_before_overwrite: backup_enabled,
+                            ..Default::default()
+                        };
 
                         if let Ok(providers) = providers_for_settings(&db, &track, &settings) {
-                            if let Ok(outcome) = download_track_with_options(
-                                &track,
-                                DownloadMode::SmartUpdate,
-                                &providers,
-                                &cancelled,
-                                dl_opts,
-                                |_| {},
-                            ) {
-                                match outcome {
-                                    DownloadOutcome::Downloaded { provider, synced } => {
-                                        chosen_provider = provider.label().to_string();
-                                        let status = if synced {
-                                            LyricsStatus::Synced
-                                        } else {
-                                            LyricsStatus::Plain
-                                        };
-                                        let _ = db.update_lyrics_status(
-                                            &audio_path,
-                                            status,
-                                            Some(provider.label()),
-                                        );
-                                        is_success = true;
-                                    }
-                                    _ => {}
-                                }
+                            if let Ok(DownloadOutcome::Downloaded { provider, synced }) =
+                                download_track_with_options(
+                                    &track,
+                                    DownloadMode::SmartUpdate,
+                                    &providers,
+                                    &cancelled,
+                                    dl_opts,
+                                    |_| {},
+                                )
+                            {
+                                chosen_provider = provider.label().to_string();
+                                let status = if synced {
+                                    LyricsStatus::Synced
+                                } else {
+                                    LyricsStatus::Plain
+                                };
+                                let _ = db.update_lyrics_status(
+                                    &audio_path,
+                                    status,
+                                    Some(provider.label()),
+                                );
+                                is_success = true;
                             }
                         }
                     }

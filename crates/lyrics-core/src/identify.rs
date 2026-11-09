@@ -486,6 +486,7 @@ pub fn identify_via_lrclib_search(
 /// Unified identification orchestrator:
 /// 1. Tries cheap filename parsing first ("Artist - Title", "01. Title", "Title (Artist)").
 /// 2. If artist is still missing/unknown or tags look like filenames, searches LRCLib by title only.
+///
 /// Returns an optional `IdentificationSuggestion` for user review. Never writes tags automatically.
 pub fn identify_track(
     track: &Track,

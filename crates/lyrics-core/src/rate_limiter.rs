@@ -187,8 +187,10 @@ mod tests {
 
     #[test]
     fn test_is_available() {
-        let mut config = RateLimitConfig::default();
-        config.requests_per_day = 1;
+        let config = RateLimitConfig {
+            requests_per_day: 1,
+            ..Default::default()
+        };
         let limiter = AdaptiveRateLimiter::new(config);
         assert!(limiter.is_available());
         limiter.wait();
@@ -197,8 +199,10 @@ mod tests {
 
     #[test]
     fn test_wait_cancellable() {
-        let mut config = RateLimitConfig::default();
-        config.base_interval = Duration::from_secs(10);
+        let config = RateLimitConfig {
+            base_interval: Duration::from_secs(10),
+            ..Default::default()
+        };
         let limiter = AdaptiveRateLimiter::new(config);
         let cancelled = std::sync::atomic::AtomicBool::new(true);
         assert!(!limiter.wait_cancellable(&cancelled));

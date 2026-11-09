@@ -485,8 +485,12 @@ pub fn align_and_compare_timing(lines_a: &[LrcLine], lines_b: &[LrcLine]) -> Opt
     for (ts_a, text_a) in &clean_a {
         let search_window_end = (cursor_b + 12).min(clean_b.len());
         let mut found = None;
-        for j in cursor_b..search_window_end {
-            let (ts_b, text_b) = &clean_b[j];
+        for (j, (ts_b, text_b)) in clean_b
+            .iter()
+            .enumerate()
+            .take(search_window_end)
+            .skip(cursor_b)
+        {
             if text_a == text_b
                 || (text_a.len() >= 4 && text_b.len() >= 4 && similarity(text_a, text_b) >= 0.85)
             {
@@ -1577,8 +1581,10 @@ mod tests {
             }]),
         })];
 
-        let mut opts = DownloadOptions::default();
-        opts.backup_before_overwrite = true;
+        let opts = DownloadOptions {
+            backup_before_overwrite: true,
+            ..Default::default()
+        };
 
         let outcome = download_track_with_options(
             &target,
