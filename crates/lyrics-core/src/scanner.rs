@@ -106,13 +106,14 @@ where
 
             if audio_mtime_matches {
                 let lrc_exists = lrc_path.is_file();
-                let status = if !lrc_exists {
-                    LyricsStatus::Missing
+                let (status, suspicious_reason) = if !lrc_exists {
+                    (LyricsStatus::Missing, None)
                 } else {
                     lyric_status(&lrc_path, prev_track.duration_seconds, &prev_track.title)
                 };
 
-                let track_changed = status != prev_track.status;
+                let track_changed = status != prev_track.status
+                    || suspicious_reason != prev_track.suspicious_reason;
 
                 let track = Track {
                     audio_path: path_str,
@@ -124,6 +125,8 @@ where
                     status,
                     mtime,
                     last_checked: prev_track.last_checked,
+                    suspicious_reason,
+                    lyrics_offset_ms: prev_track.lyrics_offset_ms,
                 };
 
                 match status {
@@ -152,7 +155,7 @@ where
 
         let metadata = read_metadata(&path);
         let title = metadata.title.as_deref().unwrap_or(&fallback_title);
-        let status = lyric_status(&lrc_path, metadata.duration_seconds, title);
+        let (status, suspicious_reason) = lyric_status(&lrc_path, metadata.duration_seconds, title);
 
         match status {
             LyricsStatus::Missing => summary.missing += 1,
@@ -173,6 +176,8 @@ where
             status,
             mtime,
             last_checked: None,
+            suspicious_reason,
+            lyrics_offset_ms: 0,
         };
 
         changed_tracks.push(track.clone());
@@ -236,26 +241,40 @@ fn read_metadata(path: &Path) -> AudioMetadata {
     }
 }
 
-fn lyric_status(path: &Path, duration_seconds: Option<f64>, title: &str) -> LyricsStatus {
+fn lyric_status(
+    path: &Path,
+    duration_seconds: Option<f64>,
+    title: &str,
+) -> (LyricsStatus, Option<String>) {
     let Ok(contents) = fs::read_to_string(path) else {
-        return LyricsStatus::Missing;
+        return (LyricsStatus::Missing, None);
     };
     if contents.trim().is_empty() {
-        LyricsStatus::Missing
+        (LyricsStatus::Missing, None)
     } else if crate::lrc::is_synced(&contents) {
-        if let Some(issue) = crate::lrc::audit_lrc(&contents, duration_seconds, title) {
-            match issue {
-                crate::lrc::LrcIssue::TooFewTimestamps
-                | crate::lrc::LrcIssue::TooLong
-                | crate::lrc::LrcIssue::EndsTooEarly
-                | crate::lrc::LrcIssue::TitleMismatch => LyricsStatus::Suspicious,
-                _ => LyricsStatus::Synced,
-            }
+        let report = crate::lrc::audit_lrc(&contents, duration_seconds, title, &[]);
+        let suspicious_issues: Vec<_> = report
+            .issues
+            .into_iter()
+            .filter(|i| {
+                !matches!(
+                    i,
+                    crate::lrc::LrcIssue::Empty | crate::lrc::LrcIssue::NotSynced
+                )
+            })
+            .collect();
+        if !suspicious_issues.is_empty() {
+            let reason = suspicious_issues
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            (LyricsStatus::Suspicious, Some(reason))
         } else {
-            LyricsStatus::Synced
+            (LyricsStatus::Synced, None)
         }
     } else {
-        LyricsStatus::Plain
+        (LyricsStatus::Plain, None)
     }
 }
 
@@ -355,6 +374,8 @@ mod tests {
                 status: LyricsStatus::Synced,
                 mtime: Some(mtime),
                 last_checked: None,
+                suspicious_reason: None,
+                lyrics_offset_ms: 0,
             },
         );
 
@@ -363,7 +384,41 @@ mod tests {
         assert_eq!(result.all_tracks[0].artist, "PreExistingArtist");
         assert_eq!(result.all_tracks[0].album, "PreExistingAlbum");
         assert_eq!(result.all_tracks[0].status, LyricsStatus::Synced);
-        assert!(result.changed_tracks.is_empty(), "Unchanged track must not be marked as changed!");
+        assert!(
+            result.changed_tracks.is_empty(),
+            "Unchanged track must not be marked as changed!"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scanner_marks_suspicious_lyrics_with_reason() {
+        let root = std::env::temp_dir().join(format!(
+            "synced-lyrics-suspicious-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("Artist - Backwards.mp3"), []).unwrap();
+        fs::write(
+            root.join("Artist - Backwards.lrc"),
+            "[00:20.00]Line 2\n[00:10.00]Line 1\n[00:30.00]Line 3",
+        )
+        .unwrap();
+
+        let (tracks, summary) = scan_directory(&root).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].status, LyricsStatus::Suspicious);
+        assert!(tracks[0].suspicious_reason.is_some());
+        assert!(tracks[0]
+            .suspicious_reason
+            .as_ref()
+            .unwrap()
+            .contains("Words or lines out of order"));
+        assert_eq!(summary.suspicious, 1);
 
         fs::remove_dir_all(root).unwrap();
     }

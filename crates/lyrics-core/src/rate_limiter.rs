@@ -49,7 +49,15 @@ impl AdaptiveRateLimiter {
     }
 
     pub fn wait(&self) {
+        let dummy = std::sync::atomic::AtomicBool::new(false);
+        let _ = self.wait_cancellable(&dummy);
+    }
+
+    pub fn wait_cancellable(&self, cancelled: &std::sync::atomic::AtomicBool) -> bool {
         loop {
+            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                return false;
+            }
             let mut state = self.state.lock().unwrap();
             let now = Instant::now();
 
@@ -66,7 +74,9 @@ impl AdaptiveRateLimiter {
                 }
                 if state.daily_count >= self.config.requests_per_day {
                     drop(state);
-                    std::thread::sleep(Duration::from_secs(1));
+                    if sleep_cancellable(Duration::from_secs(1), cancelled) {
+                        return false;
+                    }
                     continue;
                 }
             }
@@ -78,7 +88,9 @@ impl AdaptiveRateLimiter {
                     if now < expiry {
                         let sleep_dur = expiry.duration_since(now);
                         drop(state);
-                        std::thread::sleep(sleep_dur);
+                        if sleep_cancellable(sleep_dur, cancelled) {
+                            return false;
+                        }
                         continue;
                     }
                 }
@@ -88,7 +100,9 @@ impl AdaptiveRateLimiter {
             if now < state.next_slot {
                 let sleep_dur = state.next_slot.duration_since(now);
                 drop(state);
-                std::thread::sleep(sleep_dur);
+                if sleep_cancellable(sleep_dur, cancelled) {
+                    return false;
+                }
                 continue;
             }
 
@@ -96,7 +110,7 @@ impl AdaptiveRateLimiter {
             state.minute_timestamps.push(now);
             state.daily_count += 1;
             state.next_slot = now + state.current_interval;
-            break;
+            return true;
         }
     }
 
@@ -136,6 +150,20 @@ impl AdaptiveRateLimiter {
     }
 }
 
+pub fn sleep_cancellable(dur: Duration, cancelled: &std::sync::atomic::AtomicBool) -> bool {
+    let step = Duration::from_millis(50);
+    let mut remaining = dur;
+    while remaining > Duration::ZERO {
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            return true;
+        }
+        let chunk = remaining.min(step);
+        std::thread::sleep(chunk);
+        remaining = remaining.saturating_sub(chunk);
+    }
+    cancelled.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +193,14 @@ mod tests {
         assert!(limiter.is_available());
         limiter.wait();
         assert!(!limiter.is_available());
+    }
+
+    #[test]
+    fn test_wait_cancellable() {
+        let mut config = RateLimitConfig::default();
+        config.base_interval = Duration::from_secs(10);
+        let limiter = AdaptiveRateLimiter::new(config);
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+        assert!(!limiter.wait_cancellable(&cancelled));
     }
 }

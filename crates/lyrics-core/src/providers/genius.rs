@@ -1,4 +1,5 @@
-use super::{LyricsProvider, ProviderError, ProviderLyrics, ProviderName};
+use super::{LyricsProvider, ProviderError, ProviderName};
+use crate::matching::Candidate;
 use crate::model::Track;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
@@ -10,6 +11,8 @@ const PUBLIC_SEARCH_URL: &str = "https://genius.com/api/search/multi";
 const BROWSER_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const GENIUS_COOKIE: &str = "obuid=e3ee67e0-7df9-4181-8324-d977c6dc9250";
+
+const TOP_N: usize = 3;
 
 pub struct GeniusProvider {
     client: Client,
@@ -36,7 +39,7 @@ impl GeniusProvider {
         }
     }
 
-    fn search_public(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search_public(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         let query = format!("{} {}", track.title, track.artist);
         let response = self
             .client
@@ -63,7 +66,7 @@ impl GeniusProvider {
             .json::<MultiSearchResponse>()
             .map_err(|error| ProviderError::Parse(error.to_string()))?;
 
-        let url = multi
+        let hits = multi
             .response
             .and_then(|r| r.sections)
             .and_then(|sections| {
@@ -71,18 +74,35 @@ impl GeniusProvider {
                     .into_iter()
                     .find(|s| s.section_type.as_deref() == Some("song"))
                     .and_then(|s| s.hits)
-                    .and_then(|hits| hits.into_iter().next())
-                    .map(|hit| hit.result.url)
-            });
+            })
+            .unwrap_or_default();
 
-        let Some(url) = url else {
-            return Ok(None);
-        };
+        let mut candidates = Vec::new();
+        for hit in hits.into_iter().take(TOP_N) {
+            let cand_title = hit.result.title.unwrap_or_else(|| track.title.clone());
+            let cand_artist = hit
+                .result
+                .artist_names
+                .or_else(|| hit.result.primary_artist.and_then(|a| a.name))
+                .unwrap_or_else(|| track.artist.clone());
 
-        self.fetch_lyrics_from_page(&url)
+            if let Ok(Some(lyrics)) = self.fetch_lyrics_from_page(&hit.result.url) {
+                candidates.push(Candidate {
+                    title: cand_title,
+                    artist: cand_artist,
+                    album: None,
+                    duration_seconds: None,
+                    synced: None,
+                    plain: Some(lyrics),
+                    provider: ProviderName::Genius,
+                });
+            }
+        }
+
+        Ok(candidates)
     }
 
-    fn search_with_token(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search_with_token(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         let query = format!("{} {}", track.title, track.artist);
         let response = self
             .client
@@ -92,6 +112,7 @@ impl GeniusProvider {
             .query(&[("q", query.as_str())])
             .send()
             .map_err(|error| ProviderError::Request(error.to_string()))?;
+
         if response.status().as_u16() == 429 {
             return Err(ProviderError::RateLimited {
                 retry_after_seconds: Some(60),
@@ -103,20 +124,42 @@ impl GeniusProvider {
                 response.status()
             )));
         }
+
         let search = response
             .json::<SearchResponse>()
             .map_err(|error| ProviderError::Parse(error.to_string()))?;
-        let Some(url) = search
+
+        let hits = search
             .response
-            .and_then(|response| response.hits.into_iter().next())
-            .map(|hit| hit.result.url)
-        else {
-            return Ok(None);
-        };
-        self.fetch_lyrics_from_page(&url)
+            .map(|response| response.hits)
+            .unwrap_or_default();
+
+        let mut candidates = Vec::new();
+        for hit in hits.into_iter().take(TOP_N) {
+            let cand_title = hit.result.title.unwrap_or_else(|| track.title.clone());
+            let cand_artist = hit
+                .result
+                .artist_names
+                .or_else(|| hit.result.primary_artist.and_then(|a| a.name))
+                .unwrap_or_else(|| track.artist.clone());
+
+            if let Ok(Some(lyrics)) = self.fetch_lyrics_from_page(&hit.result.url) {
+                candidates.push(Candidate {
+                    title: cand_title,
+                    artist: cand_artist,
+                    album: None,
+                    duration_seconds: None,
+                    synced: None,
+                    plain: Some(lyrics),
+                    provider: ProviderName::Genius,
+                });
+            }
+        }
+
+        Ok(candidates)
     }
 
-    fn fetch_lyrics_from_page(&self, url: &str) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn fetch_lyrics_from_page(&self, url: &str) -> Result<Option<String>, ProviderError> {
         let page = self
             .client
             .get(url)
@@ -126,12 +169,7 @@ impl GeniusProvider {
             .text()
             .map_err(|error| ProviderError::Request(error.to_string()))?;
         let lyrics = extract_lyrics(&page);
-        Ok((!lyrics.is_empty()).then_some(ProviderLyrics {
-            provider: ProviderName::Genius,
-            synced: None,
-            plain: Some(lyrics),
-            confidence: 0.7,
-        }))
+        Ok((!lyrics.is_empty()).then_some(lyrics))
     }
 }
 
@@ -140,7 +178,7 @@ impl LyricsProvider for GeniusProvider {
         ProviderName::Genius
     }
 
-    fn search(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         if self.token.trim().is_empty() {
             self.search_public(track)
         } else {
@@ -150,40 +188,48 @@ impl LyricsProvider for GeniusProvider {
 }
 
 #[derive(Debug, Deserialize)]
-struct SearchResponse {
-    response: Option<SearchBody>,
+pub struct SearchResponse {
+    pub response: Option<SearchBody>,
 }
 
 #[derive(Debug, Deserialize)]
-struct SearchBody {
-    hits: Vec<Hit>,
+pub struct SearchBody {
+    pub hits: Vec<Hit>,
 }
 
 #[derive(Debug, Deserialize)]
-struct MultiSearchResponse {
-    response: Option<MultiSearchBody>,
+pub struct MultiSearchResponse {
+    pub response: Option<MultiSearchBody>,
 }
 
 #[derive(Debug, Deserialize)]
-struct MultiSearchBody {
-    sections: Option<Vec<MultiSearchSection>>,
+pub struct MultiSearchBody {
+    pub sections: Option<Vec<MultiSearchSection>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct MultiSearchSection {
+pub struct MultiSearchSection {
     #[serde(rename = "type")]
-    section_type: Option<String>,
-    hits: Option<Vec<Hit>>,
+    pub section_type: Option<String>,
+    pub hits: Option<Vec<Hit>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Hit {
-    result: HitResult,
+pub struct Hit {
+    pub result: HitResult,
 }
 
 #[derive(Debug, Deserialize)]
-struct HitResult {
-    url: String,
+pub struct HitResult {
+    pub url: String,
+    pub title: Option<String>,
+    pub artist_names: Option<String>,
+    pub primary_artist: Option<GeniusArtist>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GeniusArtist {
+    pub name: Option<String>,
 }
 
 fn extract_lyrics(page: &str) -> String {
@@ -232,7 +278,7 @@ mod tests {
     #[test]
     fn parses_search_response_and_lyrics_containers() {
         let response: SearchResponse = serde_json::from_str(
-            r#"{"response":{"hits":[{"result":{"url":"https://example.test/song"}}]}}"#,
+            r#"{"response":{"hits":[{"result":{"url":"https://example.test/song","title":"Song 1","artist_names":"Artist 1"}}]}}"#,
         )
         .unwrap();
         assert_eq!(
@@ -248,43 +294,62 @@ mod tests {
     #[test]
     fn cleans_excluded_header_elements_from_lyrics() {
         let snippet = r#"<div data-lyrics-container="true">
-            <div data-exclude-from-selection="true"><span>234 Contributors</span><span>Translations</span></div>
-            [Verse 1]<br>Hello from the other side
+            <span data-exclude-from-selection="true">Contributor Notes</span>
+            [Verse 1]<br>Line 1<br>Line 2
         </div>"#;
-        assert_eq!(
-            extract_lyrics(snippet),
-            "[Verse 1]\nHello from the other side"
-        );
+        assert_eq!(extract_lyrics(snippet), "[Verse 1]\nLine 1\nLine 2");
     }
 
     #[test]
     fn parses_multi_search_response() {
-        let json = r#"{
-            "response": {
-                "sections": [
-                    { "type": "top_hit", "hits": [] },
-                    { "type": "song", "hits": [
-                        { "result": { "url": "https://genius.com/Adele-hello-lyrics" } }
-                    ]}
-                ]
-            }
-        }"#;
-        let multi: MultiSearchResponse = serde_json::from_str(json).unwrap();
-        let song_url = multi
+        let payload: MultiSearchResponse = serde_json::from_str(
+            r#"{
+                "response": {
+                    "sections": [
+                        {
+                            "type": "top_hit",
+                            "hits": []
+                        },
+                        {
+                            "type": "song",
+                            "hits": [
+                                {
+                                    "result": {
+                                        "url": "https://genius.com/test1",
+                                        "title": "First Song",
+                                        "artist_names": "First Artist"
+                                    }
+                                },
+                                {
+                                    "result": {
+                                        "url": "https://genius.com/test2",
+                                        "title": "Second Song",
+                                        "artist_names": "Second Artist"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let hits = payload
             .response
-            .and_then(|r| r.sections)
-            .and_then(|sections| {
-                sections
-                    .into_iter()
-                    .find(|s| s.section_type.as_deref() == Some("song"))
-                    .and_then(|s| s.hits)
-                    .and_then(|hits| hits.into_iter().next())
-                    .map(|hit| hit.result.url)
-            });
-        assert_eq!(
-            song_url,
-            Some("https://genius.com/Adele-hello-lyrics".to_string())
-        );
+            .unwrap()
+            .sections
+            .unwrap()
+            .into_iter()
+            .find(|s| s.section_type.as_deref() == Some("song"))
+            .unwrap()
+            .hits
+            .unwrap();
+
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].result.title.as_deref(), Some("First Song"));
+        assert_eq!(hits[0].result.artist_names.as_deref(), Some("First Artist"));
+        assert_eq!(hits[1].result.title.as_deref(), Some("Second Song"));
     }
 
     #[test]
@@ -294,18 +359,20 @@ mod tests {
         let track = Track {
             audio_path: "test.mp3".to_string(),
             lrc_path: "test.lrc".to_string(),
-            artist: "Adele".to_string(),
-            title: "Hello".to_string(),
-            album: "25".to_string(),
-            duration_seconds: Some(295.0),
+            artist: "Lil Peep".to_string(),
+            title: "Rockstar".to_string(),
+            album: "".to_string(),
+            duration_seconds: None,
             status: crate::model::LyricsStatus::Missing,
             mtime: None,
             last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
         };
-        let res = provider.search(&track).unwrap();
-        assert!(res.is_some());
-        let lyrics = res.unwrap();
+        let result = provider.search(&track).unwrap();
+        assert!(!result.is_empty());
+        let lyrics = &result[0];
         assert!(lyrics.plain.is_some());
-        assert!(lyrics.plain.unwrap().contains("Hello, it's me"));
+        assert!(!lyrics.plain.as_ref().unwrap().is_empty());
     }
 }

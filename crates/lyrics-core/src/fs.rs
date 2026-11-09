@@ -12,6 +12,31 @@ pub enum FileStoreError {
     Write(#[source] io::Error),
     #[error("could not replace lyrics file: {0}")]
     Replace(#[source] io::Error),
+    #[error("could not backup lyrics file: {0}")]
+    Backup(#[source] io::Error),
+}
+
+pub fn backup_lyrics_file(path: impl AsRef<Path>) -> Result<Option<PathBuf>, FileStoreError> {
+    let path = path.as_ref();
+    if path.is_file() {
+        let bak_path = PathBuf::from(format!("{}.bak", path.to_string_lossy()));
+        fs::copy(path, &bak_path).map_err(FileStoreError::Backup)?;
+        Ok(Some(bak_path))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn write_atomic_with_backup(
+    path: impl AsRef<Path>,
+    contents: &str,
+    backup: bool,
+) -> Result<(), FileStoreError> {
+    let path = path.as_ref();
+    if backup && path.is_file() {
+        let _ = backup_lyrics_file(path)?;
+    }
+    write_atomic(path, contents)
 }
 
 pub fn write_atomic(path: impl AsRef<Path>, contents: &str) -> Result<(), FileStoreError> {
@@ -65,5 +90,35 @@ mod tests {
         assert_eq!(fs::read_to_string(destination).unwrap(), "[00:02]updated");
         assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn write_atomic_with_backup_creates_bak_file_when_enabled() {
+        let root =
+            std::env::temp_dir().join(format!("synced-lyrics-bak-test-{}", std::process::id()));
+        let destination = root.join("track.lrc");
+        let bak_destination = root.join("track.lrc.bak");
+
+        // Initial write without previous file - no backup created
+        write_atomic_with_backup(&destination, "[00:01]original", true).unwrap();
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "[00:01]original");
+        assert!(!bak_destination.exists());
+
+        // Overwrite with backup enabled
+        write_atomic_with_backup(&destination, "[00:02]modified", true).unwrap();
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "[00:02]modified");
+        assert!(bak_destination.is_file());
+        assert_eq!(
+            fs::read_to_string(&bak_destination).unwrap(),
+            "[00:01]original"
+        );
+
+        // Overwrite with backup disabled does not update or create if we remove it
+        fs::remove_file(&bak_destination).unwrap();
+        write_atomic_with_backup(&destination, "[00:03]third", false).unwrap();
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "[00:03]third");
+        assert!(!bak_destination.exists());
+
+        let _ = fs::remove_dir_all(root);
     }
 }

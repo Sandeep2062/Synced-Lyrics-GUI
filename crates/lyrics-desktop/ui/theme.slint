@@ -1,43 +1,71 @@
 export global Theme {
+    // Mode Switcher — defaults to true dark OLED
+    in-out property <bool> is-dark: true;
+
     // Colors
     //
-    // The app is deliberately painted on true black: every large surface is
+    // The app is deliberately painted on true black in dark mode: every large surface is
     // #000000 and panels are told apart by their 1px strokes, not by a lighter
     // fill. Only the transient interaction states (hover/pressed) and the
-    // artwork placeholder lift off the black, because a control that cannot be
-    // seen cannot be used.
-    out property <color> bg-primary: #000000;
-    out property <color> bg-surface: #000000;
-    out property <color> bg-card: #000000;
-    out property <color> bg-toolbar: #000000;
-    out property <color> bg-hover: #0E1017;
-    out property <color> bg-active: #161922;
-    out property <color> bg-elevated: #08090D;
+    // artwork placeholder lift off the black.
+    // In light mode, soft clean surfaces and subtle borders are used.
+    out property <color> bg-primary: root.is-dark ? #000000 : #F8FAFC;
+    out property <color> bg-surface: root.is-dark ? #000000 : #FFFFFF;
+    out property <color> bg-card: root.is-dark ? #000000 : #FFFFFF;
+    out property <color> bg-toolbar: root.is-dark ? #000000 : #FFFFFF;
+    out property <color> bg-hover: root.is-dark ? #0E1017 : #F1F5F9;
+    out property <color> bg-active: root.is-dark ? #161922 : #E2E8F0;
+    out property <color> bg-elevated: root.is-dark ? #08090D : #FFFFFF;
     out property <color> accent-violet: #8B5CF6;
     out property <color> accent-violet-strong: #7C3AED;
-    out property <color> accent-violet-soft: #221B3D;
+    out property <color> accent-violet-soft: root.is-dark ? #221B3D : #EDE9FE;
     out property <color> accent-cyan: #06B6D4;
-    out property <color> text-primary: #F4F7FB;
-    out property <color> text-muted: #94A3B8;
-    out property <color> text-dim: #475569;
+    out property <color> text-primary: root.is-dark ? #F4F7FB : #0F172A;
+    out property <color> text-muted: root.is-dark ? #94A3B8 : #64748B;
+    out property <color> text-dim: root.is-dark ? #475569 : #94A3B8;
     out property <color> status-synced: #34D399;
     out property <color> status-plain: #38BDF8;
     out property <color> status-missing: #FB7185;
     out property <color> status-suspicious: #FBBF24;
-    out property <color> divider: #252932;
-    out property <color> stroke-soft: #202434;
-    out property <color> stroke-strong: #3A4258;
-    out property <color> track-idle: #4A5170;
+    out property <color> divider: root.is-dark ? #252932 : #E2E8F0;
+    out property <color> stroke-soft: root.is-dark ? #202434 : #E2E8F0;
+    out property <color> stroke-strong: root.is-dark ? #3A4258 : #CBD5E1;
+    out property <color> track-idle: root.is-dark ? #4A5170 : #CBD5E1;
+
+    // Dynamic Dominant Palette (derived from currently playing track artwork)
+    in-out property <color> dominant-color-1: #8B5CF6;
+    in-out property <color> dominant-color-2: #3B82F6;
+    in-out property <color> dominant-tint-deep: root.is-dark ? #180D2E : #EDE9FE;
+    in-out property <color> dominant-tint-subtle: root.is-dark ? #0D1426 : #E0F2FE;
+
+    // Lyrics Specific Tokens
+    out property <color> lyrics-active: root.is-dark ? #FFFFFF : #0F172A;
+    out property <color> lyrics-inactive: root.is-dark ? #94A3B866 : #64748B55;
+    out property <color> lyrics-sung: root.is-dark ? #FFFFFF : #1E293B;
+    out property <color> lyrics-current-word: #38BDF8;
+    out property <color> lyrics-ambient-glow: root.dominant-color-1;
+
+    // Waveform Scrubber Tokens
+    out property <color> waveform-idle: root.is-dark ? #181B28 : #E2E8F0;
+    out property <color> waveform-played: root.accent-violet;
+    out property <color> waveform-hover: #A78BFA;
+    out property <color> waveform-playhead: #FFFFFF;
+
     // Sizing
     out property <length> header-height: 54px;
     out property <length> player-height: 92px;
+    out property <length> lyrics-panel-width: 390px;
+    out property <length> queue-panel-width: 340px;
+    out property <length> radius-xs: 4px;
     out property <length> radius-sm: 6px;
     out property <length> radius-md: 10px;
     out property <length> radius-lg: 16px;
     out property <length> spacing-sm: 8px;
     out property <length> spacing-md: 16px;
     out property <length> spacing-lg: 24px;
+
     // Motion — shared durations keep every interaction feeling like one app.
+    out property <duration> motion-snap: 80ms;
     out property <duration> motion-fast: 110ms;
     out property <duration> motion-base: 180ms;
     out property <duration> motion-slow: 300ms;

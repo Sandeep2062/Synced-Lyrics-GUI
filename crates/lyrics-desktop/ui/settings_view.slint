@@ -138,6 +138,7 @@ export component SettingsView inherits Rectangle {
     in-out property <float> request-interval: 1.0;
     in-out property <int> cache-period-idx: 1;
     in-out property <bool> scan-on-startup: false;
+    in-out property <bool> backup-before-overwrite: true;
 
     // Shown next to the save button ("Saved", "Saving…") and next to the update
     // button ("Up to date", "v1.2.0 available").
@@ -493,6 +494,41 @@ export component SettingsView inherits Rectangle {
 
                             ToggleSwitch {
                                 checked <=> root.scan-on-startup;
+                                toggled(v) => { root.save-settings(); }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.divider; }
+
+                    // Backup before overwrite toggle
+                    HorizontalLayout {
+                        height: 32px;
+                        alignment: space-between;
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            Text { text: "Backup lyrics before overwrite"; color: Theme.text-primary; font-size: 12px; font-weight: 600; }
+                            Text { text: "Never overwrite a lyrics file without saving a backup copy (.lrc.bak)"; color: Theme.text-dim; font-size: 11px; }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: center;
+
+                            Text {
+                                text: root.backup-before-overwrite ? "ON" : "OFF";
+                                color: root.backup-before-overwrite ? #34D399 : Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                width: 26px;
+                                horizontal-alignment: right;
+                            }
+
+                            ToggleSwitch {
+                                checked <=> root.backup-before-overwrite;
                                 toggled(v) => { root.save-settings(); }
                             }
                         }

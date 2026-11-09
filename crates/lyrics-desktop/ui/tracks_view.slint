@@ -25,6 +25,7 @@ export component TracksView inherits Rectangle {
     callback select-track(int);
     callback play-track(int);
     callback fetch-track(int);
+    callback identify-track(int);
     callback search-changed(string);
     callback filter-changed(int);
 
@@ -32,7 +33,7 @@ export component TracksView inherits Rectangle {
     private property <length> row-padding: 14px;
     private property <length> column-gap: 12px;
     private property <length> status-column: 130px;
-    private property <length> action-column: 150px;
+    private property <length> action-column: 170px;
 
     private property <[string]> filter-labels: ["All", "Missing", "Plain", "Synced"];
     private property <bool> filtered: root.search-text != "" || root.status-filter != 0;
@@ -319,6 +320,16 @@ export component TracksView inherits Rectangle {
                             icon-color: Theme.text-muted;
                             hover-border: #4A5478;
                             clicked => { root.play-track(idx); }
+                        }
+
+                        IconButton {
+                            icon: @image-url("../assets/search.svg");
+                            button-size: 30px;
+                            icon-size: 13px;
+                            icon-color: #60A5FA;
+                            icon-hover-color: #93C5FD;
+                            hover-border: #3B82F6;
+                            clicked => { root.identify-track(idx); }
                         }
 
                         IconButton {

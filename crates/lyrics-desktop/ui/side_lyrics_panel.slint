@@ -2,6 +2,12 @@ import { Theme } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { CoverTile, IconButton, StatusPill } from "components.slint";
 
+export struct LyricWord {
+    text: string,
+    is-sung: bool,
+    is-current: bool,
+}
+
 export struct LyricLine {
     timestamp: float,
     text: string,
@@ -18,7 +24,24 @@ export component SideLyricsPanel inherits Rectangle {
     in-out property <string> track-artist: "";
     in-out property <image> track-cover;
     in-out property <bool> has-cover: false;
-    in-out property <string> status: ""; // "synced", "plain", "missing"
+    in-out property <string> status: ""; // "synced", "plain", "missing", "suspicious"
+    in-out property <bool> is-suspicious: false;
+    in-out property <string> suspicious-reason: "";
+    in-out property <bool> has-offset: false;
+    in-out property <float> estimated-offset: 0.0;
+    private property <bool> show-offset-choice: false;
+    in-out property <bool> has-identification-suggestion: false;
+    in-out property <string> suggested-artist: "";
+    in-out property <string> suggested-title: "";
+    in-out property <string> suggested-album: "";
+    in-out property <int> suggestion-confidence: 0;
+    in-out property <string> suggestion-reason: "";
+    in-out property <bool> is-identifying: false;
+    in-out property <int> lyrics-offset-ms: 0;
+    in-out property <bool> active-has-words: false;
+    in-out property <[LyricWord]> active-words-row1: [];
+    in-out property <[LyricWord]> active-words-row2: [];
+    in-out property <string> offset-save-status: "";
 
     // Every inactive line is exactly this tall, so the column can be scrolled
     // to centre the active line with plain arithmetic. The height fits two
@@ -44,7 +67,7 @@ export component SideLyricsPanel inherits Rectangle {
 
     function handle-scroll(delta-y: length) {
         if (!root.is-user-scrolled) {
-            root.manual-scroll-offset = root.auto-scroll-offset;
+            root.manual-scroll-offset = root.scroll-offset;
             root.is-user-scrolled = true;
         }
         root.manual-scroll-offset = max(0px, min(root.max-scroll, root.manual-scroll-offset - delta-y));
@@ -56,12 +79,24 @@ export component SideLyricsPanel inherits Rectangle {
 
     changed track-title => {
         root.is-user-scrolled = false;
+        root.show-offset-choice = false;
+        root.has-identification-suggestion = false;
+        root.offset-save-status = "";
     }
 
     callback seek-to-line(int);
     callback copy-lyrics();
     callback close-panel();
     callback fetch-lyrics();
+    callback fix-offset-tag();
+    callback fix-offset-rewrite();
+    callback replace-lyrics();
+    callback identify-track();
+    callback accept-identification();
+    callback ignore-identification();
+    callback adjust-offset(int);
+    callback set-offset(int);
+    callback write-offset-to-file();
 
     // Left border divider
     Rectangle {
@@ -125,6 +160,15 @@ export component SideLyricsPanel inherits Rectangle {
                 if root.status != "": StatusPill { status: root.status; }
 
                 IconButton {
+                    icon: @image-url("../assets/search.svg");
+                    icon-size: 14px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: #60A5FA;
+                    hover-border: #3B82F6;
+                    clicked => { root.identify-track(); }
+                }
+
+                IconButton {
                     icon: @image-url("../assets/copy.svg");
                     icon-size: 15px;
                     icon-color: Theme.text-muted;
@@ -146,6 +190,375 @@ export component SideLyricsPanel inherits Rectangle {
         Rectangle {
             height: 1px;
             background: #181C28;
+        }
+
+        // Suspicious Lyrics Warning & Action Banner
+        if root.is-suspicious: Rectangle {
+            background: #231A08;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: #FBBF2466;
+
+            VerticalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    Text {
+                        text: "⚠";
+                        color: Theme.status-suspicious;
+                        font-size: 13px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.suspicious-reason != "" ? root.suspicious-reason : "Suspicious lyrics timing or content";
+                        color: Theme.status-suspicious;
+                        font-size: 12px;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    if root.has-offset: Rectangle {
+                        width: 86px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: fix_btn_ta.has-hover ? #FBBF24 : #D97706;
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                        Text {
+                            text: "Fix Offset";
+                            color: #000000;
+                            font-size: 11px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        fix_btn_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.show-offset-choice = !root.show-offset-choice;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 100px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: repl_btn_ta.has-hover ? #7C3AED : #6D28D9;
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                        Text {
+                            text: "Replace Lyrics";
+                            color: #FFFFFF;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        repl_btn_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.replace-lyrics();
+                            }
+                        }
+                    }
+                }
+
+                if root.show-offset-choice: Rectangle {
+                    background: #14110E;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #3F3320;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        Text {
+                            text: "Choose how to fix the offset (" + (root.estimated-offset > 0 ? "+" : "") + Math.round(root.estimated-offset * 100) / 100 + "s):";
+                            color: Theme.text-primary;
+                            font-size: 11px;
+                            font-weight: 600;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 26px;
+                                border-radius: 4px;
+                                background: tag_ta.has-hover ? #374151 : #1F2937;
+                                border-width: 1px;
+                                border-color: Theme.stroke-soft;
+
+                                Text {
+                                    text: "Write [offset:]";
+                                    color: #FFFFFF;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                tag_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.show-offset-choice = false;
+                                        root.fix-offset-tag();
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 26px;
+                                border-radius: 4px;
+                                background: rw_ta.has-hover ? #374151 : #1F2937;
+                                border-width: 1px;
+                                border-color: Theme.stroke-soft;
+
+                                Text {
+                                    text: "Rewrite Timestamps";
+                                    color: #FFFFFF;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                rw_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.show-offset-choice = false;
+                                        root.fix-offset-rewrite();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Identification Suggestion Card
+        if root.has-identification-suggestion: Rectangle {
+            background: #0B132B;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: #3B82F660;
+
+            VerticalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: space-between;
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Text {
+                            text: "✦";
+                            color: #60A5FA;
+                            font-size: 13px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "Suggested Track Identification";
+                            color: #93C5FD;
+                            font-size: 12px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Confidence Pill
+                    Rectangle {
+                        height: 20px;
+                        border-radius: 10px;
+                        background: root.suggestion-confidence >= 80 ? #064E3B : #451A03;
+                        border-width: 1px;
+                        border-color: root.suggestion-confidence >= 80 ? #10B98180 : #F59E0B80;
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: center;
+                            Text {
+                                text: root.suggestion-confidence + "% Match";
+                                color: root.suggestion-confidence >= 80 ? #34D399 : #FBBF24;
+                                font-size: 10px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.suggestion-reason != "" ? root.suggestion-reason : "Tags inferred from audio file properties";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+
+                // Metadata proposed diff box
+                Rectangle {
+                    background: #060913;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #1E293B;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 4px;
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: "Title:";
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 600;
+                                width: 44px;
+                            }
+                            Text {
+                                text: root.suggested-title;
+                                color: #FFFFFF;
+                                font-size: 12px;
+                                font-weight: 700;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: "Artist:";
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 600;
+                                width: 44px;
+                            }
+                            Text {
+                                text: root.suggested-artist;
+                                color: #60A5FA;
+                                font-size: 12px;
+                                font-weight: 600;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        if root.suggested-album != "": HorizontalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: "Album:";
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 600;
+                                width: 44px;
+                            }
+                            Text {
+                                text: root.suggested-album;
+                                color: Theme.text-muted;
+                                font-size: 11px;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons: Accept vs Ignore
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    Rectangle {
+                        width: 74px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: ignore_ta.has-hover ? #1F2937 : #111827;
+                        border-width: 1px;
+                        border-color: #374151;
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                        Text {
+                            text: "Ignore";
+                            color: Theme.text-muted;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        ignore_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.ignore-identification(); }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 126px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: accept_ta.has-hover ? #2563EB : #1D4ED8;
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 4px;
+
+                            Text {
+                                text: "✓";
+                                color: #FFFFFF;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: "Accept (Write Tags)";
+                                color: #FFFFFF;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        accept_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.accept-identification(); }
+                        }
+                    }
+                }
+            }
         }
 
         // Lyrics Body
@@ -185,9 +598,44 @@ export component SideLyricsPanel inherits Rectangle {
                     background: transparent;
                     clip: true;
 
-                    animate y { duration: root.is-user-scrolled ? 0ms : Theme.motion-slow; easing: ease-out; }
+                    animate y { duration: root.is-user-scrolled ? 0ms : 300ms; easing: cubic-bezier(0.25, 1, 0.5, 1); }
 
-                    HorizontalLayout {
+                    if idx == root.active-line-index && root.active-has-words: VerticalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 4px;
+                        padding-bottom: 4px;
+                        alignment: center;
+                        spacing: 4px;
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            for word in root.active-words-row1: Text {
+                                text: word.text;
+                                color: word.is-current ? #38BDF8 : (word.is-sung ? #FFFFFF : #64748B);
+                                font-size: 19px;
+                                font-weight: word.is-sung ? 700 : 500;
+                                vertical-alignment: center;
+                                animate color { duration: 100ms; easing: ease-out; }
+                            }
+                        }
+
+                        if root.active-words-row2.length > 0: HorizontalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            for word in root.active-words-row2: Text {
+                                text: word.text;
+                                color: word.is-current ? #38BDF8 : (word.is-sung ? #FFFFFF : #64748B);
+                                font-size: 19px;
+                                font-weight: word.is-sung ? 700 : 500;
+                                vertical-alignment: center;
+                                animate color { duration: 100ms; easing: ease-out; }
+                            }
+                        }
+                    }
+
+                    if !(idx == root.active-line-index && root.active-has-words): HorizontalLayout {
                         padding-left: 16px;
                         padding-right: 16px;
                         padding-top: 4px;
@@ -242,7 +690,7 @@ export component SideLyricsPanel inherits Rectangle {
             // Sync to Playback Floating Button
             if root.lines.length > 0 && root.is-user-scrolled && root.active-line-index >= 0: Rectangle {
                 x: (parent.width - self.width) / 2;
-                y: parent.height - self.height - 16px;
+                y: parent.height - self.height - 48px;
                 height: 32px;
                 width: 148px;
                 border-radius: 16px;
@@ -264,7 +712,7 @@ export component SideLyricsPanel inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                     }
                     Text {
-                        text: "Sync to Playback";
+                        text: "Jump to current";
                         color: #FFFFFF;
                         font-size: 11px;
                         font-weight: 700;
@@ -275,6 +723,133 @@ export component SideLyricsPanel inherits Rectangle {
                 sync_ta := TouchArea {
                     mouse-cursor: pointer;
                     clicked => { root.resume-sync(); }
+                }
+            }
+
+            // Per-track Offset Control Toolbar (pinned overlay at the bottom)
+            if root.lines.length > 0: Rectangle {
+                x: 10px;
+                y: parent.height - self.height - 8px;
+                width: parent.width - 20px;
+                height: 32px;
+                background: #0B0F19EE;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: root.lyrics-offset-ms != 0 ? #38BDF855 : #1E293B;
+                drop-shadow-blur: 8px;
+                drop-shadow-color: #00000099;
+                animate border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    alignment: space-between;
+                    spacing: 4px;
+
+                    // Left: Offset readout
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Text {
+                            text: "Offset:";
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: (root.lyrics-offset-ms > 0 ? "+" : "") + root.lyrics-offset-ms + "ms";
+                            color: root.lyrics-offset-ms != 0 ? #38BDF8 : Theme.text-muted;
+                            font-size: 11px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        if root.offset-save-status != "": Text {
+                            text: " (" + root.offset-save-status + ")";
+                            color: #10B981;
+                            font-size: 10px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Right: Stepper buttons
+                    HorizontalLayout {
+                        spacing: 3px;
+                        alignment: end;
+
+                        // -500ms
+                        Rectangle {
+                            width: 38px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: btn_m500.pressed ? #1E293B : (btn_m500.has-hover ? #252F3F : #111827);
+                            border-width: 1px;
+                            border-color: #374151;
+                            Text { text: "-500"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                            btn_m500 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(-500); } }
+                        }
+
+                        // -100ms
+                        Rectangle {
+                            width: 38px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: btn_m100.pressed ? #1E293B : (btn_m100.has-hover ? #252F3F : #111827);
+                            border-width: 1px;
+                            border-color: #374151;
+                            Text { text: "-100"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                            btn_m100 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(-100); } }
+                        }
+
+                        // +100ms
+                        Rectangle {
+                            width: 38px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: btn_p100.pressed ? #1E293B : (btn_p100.has-hover ? #252F3F : #111827);
+                            border-width: 1px;
+                            border-color: #374151;
+                            Text { text: "+100"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                            btn_p100 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(100); } }
+                        }
+
+                        // +500ms
+                        Rectangle {
+                            width: 38px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: btn_p500.pressed ? #1E293B : (btn_p500.has-hover ? #252F3F : #111827);
+                            border-width: 1px;
+                            border-color: #374151;
+                            Text { text: "+500"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                            btn_p500 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(500); } }
+                        }
+
+                        // Reset to 0 (shown when offset != 0)
+                        if root.lyrics-offset-ms != 0: Rectangle {
+                            width: 34px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: btn_rst.pressed ? #2A3342 : (btn_rst.has-hover ? #374151 : #1F2937);
+                            border-width: 1px;
+                            border-color: #4B5563;
+                            Text { text: "Reset"; color: Theme.text-muted; font-size: 9px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                            btn_rst := TouchArea { mouse-cursor: pointer; clicked => { root.set-offset(0); } }
+                        }
+
+                        // Write to .lrc (shown when offset != 0)
+                        if root.lyrics-offset-ms != 0: Rectangle {
+                            width: 58px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: btn_save.pressed ? #047857 : (btn_save.has-hover ? #059669 : #065F46);
+                            border-width: 1px;
+                            border-color: #10B981;
+                            Text { text: "Write .lrc"; color: #FFFFFF; font-size: 9px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                            btn_save := TouchArea { mouse-cursor: pointer; clicked => { root.write-offset-to-file(); } }
+                        }
+                    }
                 }
             }
 
@@ -326,41 +901,84 @@ export component SideLyricsPanel inherits Rectangle {
                     horizontal-alignment: center;
                 }
 
-                Rectangle {
-                    width: 118px;
-                    height: 30px;
-                    border-radius: 15px;
-                    x: (parent.width - self.width) / 2;
-                    background: fetch_btn_ta.pressed
-                        ? Theme.accent-violet-strong
-                        : (fetch_btn_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
 
-                    animate background { duration: Theme.motion-fast; easing: ease-out; }
+                    Rectangle {
+                        width: 114px;
+                        height: 30px;
+                        border-radius: 15px;
+                        background: fetch_btn_ta.pressed
+                            ? Theme.accent-violet-strong
+                            : (fetch_btn_ta.has-hover ? #9D72FF : Theme.accent-violet);
 
-                    HorizontalLayout {
-                        alignment: center;
-                        spacing: 6px;
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
 
-                        Image {
-                            source: @image-url("../assets/download.svg");
-                            y: (parent.height - self.height) / 2;
-                            width: 13px;
-                            height: 13px;
-                            colorize: #FFFFFF;
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 6px;
+
+                            Image {
+                                source: @image-url("../assets/download.svg");
+                                y: (parent.height - self.height) / 2;
+                                width: 13px;
+                                height: 13px;
+                                colorize: #FFFFFF;
+                            }
+
+                            Text {
+                                text: "Fetch Lyrics";
+                                color: #FFFFFF;
+                                font-size: 11px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
                         }
 
-                        Text {
-                            text: "Fetch Lyrics";
-                            color: #FFFFFF;
-                            font-size: 11px;
-                            font-weight: 600;
-                            vertical-alignment: center;
+                        fetch_btn_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.fetch-lyrics(); }
                         }
                     }
 
-                    fetch_btn_ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.fetch-lyrics(); }
+                    Rectangle {
+                        width: 114px;
+                        height: 30px;
+                        border-radius: 15px;
+                        background: id_btn_ta.pressed
+                            ? #1E3A8A
+                            : (id_btn_ta.has-hover ? #2563EB : #1D4ED8);
+                        border-width: 1px;
+                        border-color: #3B82F680;
+
+                        animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 6px;
+
+                            Image {
+                                source: @image-url("../assets/search.svg");
+                                y: (parent.height - self.height) / 2;
+                                width: 13px;
+                                height: 13px;
+                                colorize: #FFFFFF;
+                            }
+
+                            Text {
+                                text: root.is-identifying ? "Identifying..." : "Identify Track";
+                                color: #FFFFFF;
+                                font-size: 11px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        id_btn_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.identify-track(); }
+                        }
                     }
                 }
             }

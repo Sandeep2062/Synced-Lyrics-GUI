@@ -1,13 +1,16 @@
+use crate::matching::Candidate;
 use crate::model::Track;
 pub mod genius;
 pub mod lrclib;
 pub mod megalobiz;
 pub mod musixmatch;
 pub mod netease;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum ProviderName {
+    #[default]
     Lrclib,
     Musixmatch,
     Netease,
@@ -67,7 +70,10 @@ pub enum ProviderError {
 
 pub trait LyricsProvider: Send + Sync {
     fn name(&self) -> ProviderName;
-    fn search(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError>;
+    fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError>;
+    fn rate_limiter(&self) -> Option<&crate::rate_limiter::AdaptiveRateLimiter> {
+        None
+    }
 }
 
 #[cfg(test)]

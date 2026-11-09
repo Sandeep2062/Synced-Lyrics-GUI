@@ -45,8 +45,10 @@ impl WaveformStore {
     }
 
     fn entry_path(&self, audio_path: &str, stamp: u64) -> PathBuf {
-        self.directory
-            .join(format!("{:016x}.wf", crate::art::fingerprint(audio_path, stamp)))
+        self.directory.join(format!(
+            "{:016x}.wf",
+            crate::art::fingerprint(audio_path, stamp)
+        ))
     }
 
     pub fn get(&self, audio_path: &str, stamp: u64) -> Option<Vec<f32>> {

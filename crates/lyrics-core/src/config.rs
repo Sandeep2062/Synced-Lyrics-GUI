@@ -38,6 +38,7 @@ pub struct AppSettings {
     pub window_width: u32,
     pub window_height: u32,
     pub scan_on_startup: bool,
+    pub backup_lyrics_before_overwrite: bool,
 }
 
 impl Default for AppSettings {
@@ -57,6 +58,7 @@ impl Default for AppSettings {
             window_width: 1280,
             window_height: 820,
             scan_on_startup: false,
+            backup_lyrics_before_overwrite: true,
         }
     }
 }
@@ -293,6 +295,7 @@ mod tests {
         assert!(settings.netease_enabled);
         assert!(settings.megalobiz_enabled);
         assert!(settings.genius_enabled);
+        assert!(settings.backup_lyrics_before_overwrite);
     }
 
     #[test]

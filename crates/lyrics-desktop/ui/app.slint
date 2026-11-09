@@ -1,16 +1,20 @@
 import { Theme } from "theme.slint";
+import { CoverTile, IconButton, StatusPill } from "components.slint";
 import { AppHeader } from "header.slint";
 import { PlayerBar } from "player_bar.slint";
-import { SideLyricsPanel, LyricLine } from "side_lyrics_panel.slint";
+import { SideLyricsPanel, LyricLine, LyricWord } from "side_lyrics_panel.slint";
+import { NowPlayingView } from "now_playing_view.slint";
+import { QueueDrawer } from "queue_drawer.slint";
 import { TracksView, TrackData } from "tracks_view.slint";
 import { AlbumsView, AlbumData } from "albums_view.slint";
 import { ArtistsView, ArtistData } from "artists_view.slint";
 import { SettingsView } from "settings_view.slint";
+import { HealthView, HealthTrackRow, HealthResultLog, PreviewDiffItem } from "health_view.slint";
 import { ManageDirectoriesDialog } from "manage_directories.slint";
 import { BatchDownloadDialog, BatchLogEntry, BatchStats } from "batch_download_dialog.slint";
 import { BatchDownloadPill } from "batch_download_pill.slint";
 
-export { TrackData, AlbumData, ArtistData, LyricLine, BatchLogEntry, BatchStats }
+export { TrackData, AlbumData, ArtistData, LyricLine, LyricWord, BatchLogEntry, BatchStats, HealthTrackRow, HealthResultLog, PreviewDiffItem }
 
 export component MainWindow inherits Window {
     title: "Synced Lyrics";
@@ -23,6 +27,110 @@ export component MainWindow inherits Window {
     
     // Core properties
     in-out property <int> active-tab: 0;
+    in-out property <bool> queue-visible: false;
+    in-out property <bool> now-playing-visible: false;
+    in-out property <bool> mini-player-mode: false;
+    in-out property <[TrackData]> queue-tracks: root.tracks;
+    in-out property <int> current-queue-index: -1;
+    in-out property <string> track-album: "";
+    in-out property <string> next-track-preview: "";
+    in-out property <color> dominant-color-1 <=> Theme.dominant-color-1;
+    in-out property <color> dominant-color-2 <=> Theme.dominant-color-2;
+    in-out property <bool> is-dark <=> Theme.is-dark;
+
+    private property <length> queue-offset: root.queue-visible ? 340px : 0px;
+    animate queue-offset { duration: 260ms; easing: ease-in-out; }
+
+    forward-focus: lyrics_key_scope;
+    lyrics_key_scope := FocusScope {
+        key-pressed(event) => {
+            // Per-track offset adjustment shortcuts when lyrics or now-playing is visible
+            if root.lyrics-visible || root.now-playing-visible {
+                if event.text == "[" {
+                    root.adjust-lyrics-offset(-100);
+                    return EventResult.accept;
+                }
+                if event.text == "]" {
+                    root.adjust-lyrics-offset(100);
+                    return EventResult.accept;
+                }
+                if event.text == "{" {
+                    root.adjust-lyrics-offset(-500);
+                    return EventResult.accept;
+                }
+                if event.text == "}" {
+                    root.adjust-lyrics-offset(500);
+                    return EventResult.accept;
+                }
+                if event.text == "-" {
+                    root.adjust-lyrics-offset(-100);
+                    return EventResult.accept;
+                }
+                if event.text == "+" || event.text == "=" {
+                    root.adjust-lyrics-offset(100);
+                    return EventResult.accept;
+                }
+                if event.text == "_" {
+                    root.adjust-lyrics-offset(-500);
+                    return EventResult.accept;
+                }
+                if event.text == "0" {
+                    root.set-lyrics-offset(0);
+                    return EventResult.accept;
+                }
+                if event.text == "s" || event.text == "S" {
+                    if root.lyrics-offset-ms != 0 {
+                        root.write-lyrics-offset-to-file();
+                        return EventResult.accept;
+                    }
+                }
+            }
+
+            // Global player keyboard navigation
+            if event.text == " " {
+                root.play-pause();
+                return EventResult.accept;
+            }
+            if event.text == Key.LeftArrow {
+                root.rewind();
+                return EventResult.accept;
+            }
+            if event.text == Key.RightArrow {
+                root.forward();
+                return EventResult.accept;
+            }
+            if event.text == Key.UpArrow {
+                root.volume-changed(Math.min(1.0, root.volume + 0.05));
+                return EventResult.accept;
+            }
+            if event.text == Key.DownArrow {
+                root.volume-changed(Math.max(0.0, root.volume - 0.05));
+                return EventResult.accept;
+            }
+            if event.text == "l" || event.text == "L" {
+                if root.has-track && root.has-lyrics {
+                    root.lyrics-visible = !root.lyrics-visible;
+                    if root.lyrics-visible {
+                        root.queue-visible = false;
+                    }
+                }
+                return EventResult.accept;
+            }
+            if event.text == "q" || event.text == "Q" {
+                root.queue-visible = !root.queue-visible;
+                if root.queue-visible {
+                    root.lyrics-visible = false;
+                }
+                return EventResult.accept;
+            }
+            if event.text == "m" || event.text == "M" {
+                root.mini-player-mode = !root.mini-player-mode;
+                return EventResult.accept;
+            }
+
+            EventResult.reject
+        }
+    }
     
     // Header properties/callbacks
     in-out property <bool> is-refreshing: false;
@@ -54,6 +162,7 @@ export component MainWindow inherits Window {
     callback prev-track();
     callback next-track();
     callback volume-changed(float);
+    callback play-queue-track(int);
     
     // Lyrics Panel properties
     in-out property <bool> lyrics-visible: false;
@@ -63,10 +172,28 @@ export component MainWindow inherits Window {
     in-out property <[LyricLine]> lyrics-lines: [];
     in-out property <string> lyrics-plain-text: "";
     in-out property <string> lyrics-status: "";
+    in-out property <bool> lyrics-has-identification-suggestion: false;
+    in-out property <string> lyrics-suggested-artist: "";
+    in-out property <string> lyrics-suggested-title: "";
+    in-out property <string> lyrics-suggested-album: "";
+    in-out property <int> lyrics-suggestion-confidence: 0;
+    in-out property <string> lyrics-suggestion-reason: "";
+    in-out property <bool> lyrics-is-identifying: false;
+    in-out property <int> lyrics-offset-ms: 0;
+    in-out property <bool> active-has-words: false;
+    in-out property <[LyricWord]> active-words-row1: [];
+    in-out property <[LyricWord]> active-words-row2: [];
+    in-out property <string> lyrics-offset-save-status: "";
     
     callback seek-to-line(int);
     callback copy-lyrics();
     callback fetch-current-lyrics();
+    callback identify-current-track();
+    callback accept-current-identification();
+    callback ignore-current-identification();
+    callback adjust-lyrics-offset(int);
+    callback set-lyrics-offset(int);
+    callback write-lyrics-offset-to-file();
     
     // TracksView properties
     in-out property <[TrackData]> tracks: [];
@@ -77,6 +204,7 @@ export component MainWindow inherits Window {
     callback select-track(int);
     callback play-track(int);
     callback fetch-track(int);
+    callback identify-track(int);
     callback search-changed(string);
     callback filter-changed(int);
     
@@ -116,6 +244,7 @@ export component MainWindow inherits Window {
     in-out property <float> settings-request-interval: 1.0;
     in-out property <int> settings-cache-period-idx: 1;
     in-out property <bool> settings-scan-on-startup: false;
+    in-out property <bool> settings-backup-before-overwrite: true;
     in-out property <string> settings-status: "";
     in-out property <string> updates-status: "";
     in-out property <bool> updates-checking: false;
@@ -124,6 +253,47 @@ export component MainWindow inherits Window {
     callback save-settings();
     callback check-updates();
     callback open-github();
+
+    // HealthView properties
+    in-out property <int> health-total-count: 0;
+    in-out property <int> health-synced-count: 0;
+    in-out property <int> health-plain-count: 0;
+    in-out property <int> health-missing-count: 0;
+    in-out property <int> health-suspicious-count: 0;
+    in-out property <int> health-safe-issues-count: 0;
+    in-out property <int> health-wrong-song-count: 0;
+    in-out property <int> health-offset-count: 0;
+    in-out property <int> health-too-short-long-count: 0;
+    in-out property <bool> health-has-resumable-job: false;
+    in-out property <string> health-resumable-progress-text: "";
+    in-out property <bool> health-is-running: false;
+    in-out property <bool> health-is-paused: false;
+    in-out property <float> health-progress: 0.0;
+    in-out property <string> health-progress-text: "0 / 0";
+    in-out property <string> health-current-track-text: "";
+    in-out property <int> health-active-view-tab: 0;
+    in-out property <int> health-issue-filter: 0;
+    in-out property <string> health-search-text: "";
+    in-out property <[HealthTrackRow]> health-issues: [];
+    in-out property <[HealthResultLog]> health-result-logs: [];
+    in-out property <bool> health-preview-modal-open: false;
+    in-out property <[PreviewDiffItem]> health-preview-items: [];
+    in-out property <int> health-preview-selected-index: 0;
+
+    callback health-re-audit();
+    callback health-fix-all-safe();
+    callback health-preview-single-issue(int);
+    callback health-apply-fixes();
+    callback health-cancel-preview();
+    callback health-resume-batch();
+    callback health-dismiss-resumable();
+    callback health-pause-resume-batch();
+    callback health-stop-batch();
+    callback health-filter-changed(int);
+    callback health-search-changed(string);
+    callback health-view-tab-changed(int);
+    callback health-select-preview-item(int);
+    callback health-toggle-backup(bool);
     
     // Manage-directories overlay
     in-out property <bool> directories-open: false;
@@ -155,6 +325,16 @@ export component MainWindow inherits Window {
     callback batch-pause-resume();
     callback batch-stop();
     callback batch-close();
+
+    // Suspicious lyrics actions
+    in-out property <bool> lyrics-is-suspicious: false;
+    in-out property <string> lyrics-suspicious-reason: "";
+    in-out property <bool> lyrics-has-offset: false;
+    in-out property <float> lyrics-estimated-offset: 0.0;
+
+    callback fix-offset-tag();
+    callback fix-offset-rewrite();
+    callback replace-lyrics();
     
     VerticalLayout {
         // Row 0: Header
@@ -172,7 +352,7 @@ export component MainWindow inherits Window {
             batch-progress-text: root.batch-progress-text;
         }
         
-        // Row 1: Main Content + Animated Slide-in Right-Side Lyrics Panel
+        // Row 1: Main Content + Animated Slide-in Right-Side Lyrics Panel & Queue Drawer
         Rectangle {
             horizontal-stretch: 1;
             vertical-stretch: 1;
@@ -182,7 +362,7 @@ export component MainWindow inherits Window {
             Rectangle {
                 x: 0;
                 y: 0;
-                width: parent.width - root.lyrics-offset;
+                width: parent.width - (root.lyrics-visible ? root.lyrics-offset : (root.queue-visible ? root.queue-offset : 0px));
                 height: 100%;
                 clip: true;
 
@@ -194,6 +374,7 @@ export component MainWindow inherits Window {
                     select-track(idx) => { root.select-track(idx); }
                     play-track(idx) => { root.play-track(idx); }
                     fetch-track(idx) => { root.fetch-track(idx); }
+                    identify-track(idx) => { root.identify-track(idx); }
                     search-changed(t) => { root.search-changed(t); }
                     filter-changed(idx) => { root.filter-changed(idx); }
                 }
@@ -218,7 +399,48 @@ export component MainWindow inherits Window {
                     download-artist(idx) => { root.download-artist(idx); }
                     play-track(idx) => { root.play-artist-track(idx); }
                 }
-                if root.active-tab == 3: SettingsView {
+                if root.active-tab == 3: HealthView {
+                    total-count: root.health-total-count;
+                    synced-count: root.health-synced-count;
+                    plain-count: root.health-plain-count;
+                    missing-count: root.health-missing-count;
+                    suspicious-count: root.health-suspicious-count;
+                    safe-issues-count: root.health-safe-issues-count;
+                    wrong-song-count: root.health-wrong-song-count;
+                    offset-count: root.health-offset-count;
+                    too-short-long-count: root.health-too-short-long-count;
+                    has-resumable-job: root.health-has-resumable-job;
+                    resumable-progress-text: root.health-resumable-progress-text;
+                    is-running: root.health-is-running;
+                    is-paused: root.health-is-paused;
+                    progress: root.health-progress;
+                    progress-text: root.health-progress-text;
+                    current-track-text: root.health-current-track-text;
+                    active-view-tab <=> root.health-active-view-tab;
+                    issue-filter <=> root.health-issue-filter;
+                    search-text <=> root.health-search-text;
+                    issues: root.health-issues;
+                    result-logs: root.health-result-logs;
+                    preview-modal-open <=> root.health-preview-modal-open;
+                    preview-items: root.health-preview-items;
+                    preview-selected-index <=> root.health-preview-selected-index;
+                    backup-enabled <=> root.settings-backup-before-overwrite;
+                    re-audit => { root.health-re-audit(); }
+                    fix-all-safe => { root.health-fix-all-safe(); }
+                    preview-single-issue(idx) => { root.health-preview-single-issue(idx); }
+                    apply-fixes => { root.health-apply-fixes(); }
+                    cancel-preview => { root.health-cancel-preview(); }
+                    resume-batch => { root.health-resume-batch(); }
+                    dismiss-resumable => { root.health-dismiss-resumable(); }
+                    pause-resume-batch => { root.health-pause-resume-batch(); }
+                    stop-batch => { root.health-stop-batch(); }
+                    filter-changed(idx) => { root.health-filter-changed(idx); }
+                    search-changed(t) => { root.health-search-changed(t); }
+                    view-tab-changed(idx) => { root.health-view-tab-changed(idx); }
+                    select-preview-item(idx) => { root.health-select-preview-item(idx); }
+                    toggle-backup(b) => { root.health-toggle-backup(b); }
+                }
+                if root.active-tab == 4: SettingsView {
                     lrclib-url <=> root.settings-lrclib-url;
                     musixmatch-key <=> root.settings-musixmatch-key;
                     genius-token <=> root.settings-genius-token;
@@ -230,6 +452,7 @@ export component MainWindow inherits Window {
                     request-interval <=> root.settings-request-interval;
                     cache-period-idx <=> root.settings-cache-period-idx;
                     scan-on-startup <=> root.settings-scan-on-startup;
+                    backup-before-overwrite <=> root.settings-backup-before-overwrite;
                     settings-status: root.settings-status;
                     updates-status: root.updates-status;
                     updates-checking: root.updates-checking;
@@ -256,11 +479,97 @@ export component MainWindow inherits Window {
                 track-cover: root.track-cover;
                 has-cover: root.has-cover;
                 status: root.lyrics-status;
+                is-suspicious: root.lyrics-is-suspicious;
+                suspicious-reason: root.lyrics-suspicious-reason;
+                has-offset: root.lyrics-has-offset;
+                estimated-offset: root.lyrics-estimated-offset;
+                has-identification-suggestion: root.lyrics-has-identification-suggestion;
+                suggested-artist: root.lyrics-suggested-artist;
+                suggested-title: root.lyrics-suggested-title;
+                suggested-album: root.lyrics-suggested-album;
+                suggestion-confidence: root.lyrics-suggestion-confidence;
+                suggestion-reason: root.lyrics-suggestion-reason;
+                is-identifying: root.lyrics-is-identifying;
+                lyrics-offset-ms: root.lyrics-offset-ms;
+                active-has-words: root.active-has-words;
+                active-words-row1: root.active-words-row1;
+                active-words-row2: root.active-words-row2;
+                offset-save-status: root.lyrics-offset-save-status;
 
                 seek-to-line(idx) => { root.seek-to-line(idx); }
                 copy-lyrics => { root.copy-lyrics(); }
                 close-panel => { root.lyrics-visible = false; }
                 fetch-lyrics => { root.fetch-current-lyrics(); }
+                fix-offset-tag => { root.fix-offset-tag(); }
+                fix-offset-rewrite => { root.fix-offset-rewrite(); }
+                replace-lyrics => { root.replace-lyrics(); }
+                identify-track => { root.identify-current-track(); }
+                accept-identification => { root.accept-current-identification(); }
+                ignore-identification => { root.ignore-current-identification(); }
+                adjust-offset(delta) => { root.adjust-lyrics-offset(delta); }
+                set-offset(val) => { root.set-lyrics-offset(val); }
+                write-offset-to-file => { root.write-lyrics-offset-to-file(); }
+            }
+
+            // Right: Animated Slide-over Play Queue Drawer
+            QueueDrawer {
+                x: parent.width - root.queue-offset;
+                y: 0;
+                width: 340px;
+                height: 100%;
+                visible: root.queue-offset > 0px;
+                is-open: root.queue-visible;
+                queue-tracks: root.queue-tracks;
+                current-queue-index: root.current-queue-index;
+                now-playing-title: root.track-title;
+                now-playing-artist: root.track-subtitle;
+                now-playing-cover: root.track-cover;
+                now-playing-has-cover: root.has-cover;
+
+                close => { root.queue-visible = false; }
+                play-track(idx) => { root.play-queue-track(idx); }
+                clear-queue => { root.queue-tracks = []; }
+            }
+
+            // Fullscreen Now Playing Stage Overlay
+            if root.now-playing-visible: NowPlayingView {
+                x: 0;
+                y: 0;
+                width: 100%;
+                height: 100%;
+                is-open: root.now-playing-visible;
+                track-title: root.track-title;
+                track-artist: root.track-subtitle;
+                track-album: root.track-album;
+                track-cover: root.track-cover;
+                has-cover: root.has-cover;
+                status: root.lyrics-status;
+                is-playing: root.is-playing;
+                has-track: root.has-track;
+                has-lyrics: root.has-lyrics;
+                seek-position: root.seek-position;
+                position-text: root.position-text;
+                duration-text: root.duration-text;
+                waveform-data: root.waveform-data;
+                volume: root.volume;
+                active-line-index: root.active-line-index;
+                lines: root.lyrics-lines;
+                plain-text: root.lyrics-plain-text;
+                active-has-words: root.active-has-words;
+                active-words-row1: root.active-words-row1;
+                active-words-row2: root.active-words-row2;
+
+                close => { root.now-playing-visible = false; }
+                play-pause => { root.play-pause(); }
+                seek(val) => { root.seek(val); }
+                rewind => { root.rewind(); }
+                forward => { root.forward(); }
+                prev-track => { root.prev-track(); }
+                next-track => { root.next-track(); }
+                volume-changed(val) => { root.volume-changed(val); }
+                seek-to-line(idx) => { root.seek-to-line(idx); }
+                fetch-lyrics => { root.fetch-current-lyrics(); }
+                toggle-queue => { root.queue-visible = !root.queue-visible; }
             }
         }
         
@@ -280,6 +589,8 @@ export component MainWindow inherits Window {
             has-cover: root.has-cover;
             waveform-data: root.waveform-data;
             is-lyrics-open: root.lyrics-visible;
+            is-queue-open: root.queue-visible;
+            next-track-preview: root.next-track-preview;
 
             play-pause => { root.play-pause(); }
             seek(val) => { root.seek(val); }
@@ -288,7 +599,128 @@ export component MainWindow inherits Window {
             prev-track => { root.prev-track(); }
             next-track => { root.next-track(); }
             volume-changed(val) => { root.volume-changed(val); }
-            toggle-lyrics => { root.lyrics-visible = !root.lyrics-visible; }
+            toggle-lyrics => {
+                root.lyrics-visible = !root.lyrics-visible;
+                if root.lyrics-visible {
+                    root.queue-visible = false;
+                }
+            }
+            toggle-queue => {
+                root.queue-visible = !root.queue-visible;
+                if root.queue-visible {
+                    root.lyrics-visible = false;
+                }
+            }
+            toggle-mini-player => {
+                root.mini-player-mode = !root.mini-player-mode;
+            }
+            open-now-playing => {
+                root.now-playing-visible = !root.now-playing-visible;
+            }
+        }
+    }
+
+    // Mini-Player Floating Mode Overlay
+    if root.mini-player-mode: Rectangle {
+        x: parent.width - self.width - 24px;
+        y: parent.height - 92px - self.height - 18px;
+        width: 370px;
+        height: 104px;
+        border-radius: 14px;
+        background: Theme.bg-card;
+        border-width: 1px;
+        border-color: Theme.accent-violet;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #000000bb;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 6px;
+
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+
+                CoverTile {
+                    cover: root.track-cover;
+                    has-cover: root.has-cover;
+                    tile-size: 40px;
+                    icon-size: 18px;
+                    tile-radius: 6px;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text: root.has-track ? root.track-title : "No Track";
+                        color: Theme.text-primary;
+                        font-size: 12px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.has-track ? root.track-subtitle : "Idle";
+                        color: Theme.text-muted;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: end;
+
+                    IconButton {
+                        icon: @image-url("../assets/skip_prev.svg");
+                        button-size: 26px;
+                        icon-size: 13px;
+                        clicked => { root.prev-track(); }
+                    }
+
+                    IconButton {
+                        icon: root.is-playing ? @image-url("../assets/pause.svg") : @image-url("../assets/play.svg");
+                        button-size: 30px;
+                        icon-size: 14px;
+                        icon-color: #FFFFFF;
+                        idle-tint: Theme.accent-violet;
+                        clicked => { root.play-pause(); }
+                    }
+
+                    IconButton {
+                        icon: @image-url("../assets/skip_next.svg");
+                        button-size: 26px;
+                        icon-size: 13px;
+                        clicked => { root.next-track(); }
+                    }
+
+                    IconButton {
+                        icon: @image-url("../assets/fullscreen.svg");
+                        button-size: 26px;
+                        icon-size: 12px;
+                        clicked => { root.mini-player-mode = false; }
+                    }
+                }
+            }
+
+            // Single line active lyric snippet ticker
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: center;
+
+                Text {
+                    text: root.active-line-index >= 0 && root.active-line-index < root.lyrics-lines.length
+                        ? root.lyrics-lines[root.active-line-index].text
+                        : (root.has-track ? root.position-text + " / " + root.duration-text : "Select a track to play");
+                    color: root.active-line-index >= 0 ? Theme.accent-cyan : Theme.text-dim;
+                    font-size: 11px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+            }
         }
     }
 

@@ -3,7 +3,7 @@
 
 #define MyAppName "Synced Lyrics"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 #define MyAppPublisher "Synced Lyrics GUI contributors"
 #define MyAppURL "https://github.com/Sandeep2062/Synced-Lyrics-GUI"

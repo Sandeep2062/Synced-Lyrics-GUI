@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Synced Lyrics GUI - Linux Package Builder (.deb, .AppImage, and portable .tar.gz)
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 TARGET_DIR="${2:-target/release}"
 OUTPUT_DIR="${3:-dist}"
 

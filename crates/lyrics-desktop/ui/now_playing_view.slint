@@ -1,0 +1,581 @@
+import { Theme } from "theme.slint";
+import { CoverTile, IconButton, StatusPill, VolumeSlider } from "components.slint";
+import { LyricLine, LyricWord } from "side_lyrics_panel.slint";
+
+export component NowPlayingView inherits Rectangle {
+    background: @linear-gradient(145deg, Theme.dominant-tint-deep 0%, Theme.bg-primary 60%, Theme.dominant-tint-subtle 100%);
+
+    in-out property <bool> is-open: false;
+    in-out property <string> track-title: "";
+    in-out property <string> track-artist: "";
+    in-out property <string> track-album: "";
+    in-out property <image> track-cover;
+    in-out property <bool> has-cover: false;
+    in-out property <string> status: "";
+    in-out property <bool> is-playing: false;
+    in-out property <bool> has-track: false;
+    in-out property <bool> has-lyrics: false;
+    in-out property <float> seek-position: 0.0;
+    in-out property <string> position-text: "00:00";
+    in-out property <string> duration-text: "00:00";
+    in-out property <[float]> waveform-data: [];
+    in-out property <float> volume: 0.7;
+
+    // Lyrics properties
+    in-out property <int> active-line-index: -1;
+    in-out property <[LyricLine]> lines: [];
+    in-out property <string> plain-text: "";
+    in-out property <bool> active-has-words: false;
+    in-out property <[LyricWord]> active-words-row1: [];
+    in-out property <[LyricWord]> active-words-row2: [];
+
+    callback close();
+    callback play-pause();
+    callback seek(float);
+    callback rewind();
+    callback forward();
+    callback prev-track();
+    callback next-track();
+    callback volume-changed(float);
+    callback seek-to-line(int);
+    callback fetch-lyrics();
+    callback toggle-queue();
+
+    // Lyrics scroll geometry
+    private property <length> line-height: 56px;
+    private property <length> active-line-height: 74px;
+    private property <length> active-growth: root.active-line-height - root.line-height;
+    private property <length> content-height: root.lines.length * root.line-height + root.active-growth;
+    private property <length> max-scroll: max(0px, root.content-height - lyrics_viewport.height);
+    private property <length> auto-scroll-offset: min(
+        root.max-scroll,
+        max(0px, root.active-line-index * root.line-height
+            + root.active-line-height / 2
+            - lyrics_viewport.height / 2)
+    );
+    private property <length> manual-scroll-offset: 0px;
+    private property <bool> is-user-scrolled: false;
+    private property <length> scroll-offset: root.is-user-scrolled ? root.manual-scroll-offset : root.auto-scroll-offset;
+
+    function handle-scroll(delta-y: length) {
+        if (!root.is-user-scrolled) {
+            root.manual-scroll-offset = root.scroll-offset;
+            root.is-user-scrolled = true;
+        }
+        root.manual-scroll-offset = max(0px, min(root.max-scroll, root.manual-scroll-offset - delta-y));
+    }
+
+    function resume-sync() {
+        root.is-user-scrolled = false;
+    }
+
+    changed track-title => {
+        root.is-user-scrolled = false;
+    }
+
+    VerticalLayout {
+        padding-left: 28px;
+        padding-right: 28px;
+        padding-top: 20px;
+        padding-bottom: 24px;
+        spacing: 16px;
+
+        // Top Navigation Header
+        HorizontalLayout {
+            height: 40px;
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+
+                IconButton {
+                    icon: @image-url("../assets/close.svg");
+                    button-size: 34px;
+                    icon-size: 16px;
+                    icon-hover-color: #FFFFFF;
+                    clicked => { root.close(); }
+                }
+
+                Text {
+                    text: "NOW PLAYING";
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: 1.5px;
+                    vertical-alignment: center;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: end;
+
+                if root.status != "": StatusPill {
+                    status: root.status;
+                }
+
+                IconButton {
+                    icon: @image-url("../assets/lyrics_icon.svg");
+                    button-size: 34px;
+                    icon-size: 16px;
+                    icon-color: Theme.accent-violet;
+                    hover-border: Theme.accent-violet;
+                    clicked => { root.toggle-queue(); }
+                }
+            }
+        }
+
+        // Center Split: Left Artwork & Controls | Right Synced Lyrics
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 36px;
+
+            // Left Column: Artwork & Player Controls
+            VerticalLayout {
+                width: 380px;
+                alignment: center;
+                spacing: 16px;
+
+                // Large Cover Tile
+                Rectangle {
+                    width: 300px;
+                    height: 300px;
+                    border-radius: 16px;
+                    background: Theme.bg-elevated;
+                    border-width: 1px;
+                    border-color: Theme.stroke-soft;
+                    clip: true;
+                    x: (parent.width - self.width) / 2;
+
+                    if root.has-cover: Image {
+                        source: root.track-cover;
+                        width: 100%;
+                        height: 100%;
+                    }
+
+                    if !root.has-cover: Image {
+                        source: @image-url("../assets/music_note.svg");
+                        width: 90px;
+                        height: 90px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        colorize: Theme.text-dim;
+                    }
+                }
+
+                // Metadata Details
+                VerticalLayout {
+                    spacing: 4px;
+                    alignment: center;
+
+                    Text {
+                        text: root.has-track ? root.track-title : "No Track Selected";
+                        color: Theme.text-primary;
+                        font-size: 20px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: root.has-track
+                            ? (root.track-album != "" ? (root.track-artist + " • " + root.track-album) : root.track-artist)
+                            : "Choose a song from your music library";
+                        color: Theme.text-muted;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+
+                // Transport Cluster
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 14px;
+
+                    IconButton {
+                        icon: @image-url("../assets/skip_prev.svg");
+                        button-size: 38px;
+                        icon-size: 18px;
+                        icon-hover-color: #FFFFFF;
+                        enabled: root.has-track;
+                        clicked => { root.prev-track(); }
+                    }
+
+                    IconButton {
+                        icon: @image-url("../assets/rewind10.svg");
+                        button-size: 38px;
+                        icon-size: 20px;
+                        icon-hover-color: #FFFFFF;
+                        enabled: root.has-track;
+                        clicked => { root.rewind(); }
+                    }
+
+                    // Play/Pause Disc
+                    Rectangle {
+                        width: 52px;
+                        height: 52px;
+                        border-radius: 26px;
+                        background: root.is-playing
+                            ? (np_pp_ta.pressed ? #6D28D9 : (np_pp_ta.has-hover ? #9D72FF : Theme.accent-violet))
+                            : (np_pp_ta.pressed ? #232838 : (np_pp_ta.has-hover ? #282E42 : #1D2130));
+                        border-width: 1px;
+                        border-color: root.is-playing ? #D6C2FF : #363E56;
+
+                        animate background, border-color {
+                            duration: Theme.motion-base;
+                            easing: ease-out;
+                        }
+
+                        Image {
+                            source: root.is-playing
+                                ? @image-url("../assets/pause.svg")
+                                : @image-url("../assets/play.svg");
+                            width: 22px;
+                            height: 22px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            colorize: #FFFFFF;
+                        }
+
+                        np_pp_ta := TouchArea {
+                            enabled: root.has-track;
+                            mouse-cursor: root.has-track ? pointer : default;
+                            clicked => { root.play-pause(); }
+                        }
+                    }
+
+                    IconButton {
+                        icon: @image-url("../assets/forward10.svg");
+                        button-size: 38px;
+                        icon-size: 20px;
+                        icon-hover-color: #FFFFFF;
+                        enabled: root.has-track;
+                        clicked => { root.forward(); }
+                    }
+
+                    IconButton {
+                        icon: @image-url("../assets/skip_next.svg");
+                        button-size: 38px;
+                        icon-size: 18px;
+                        icon-hover-color: #FFFFFF;
+                        enabled: root.has-track;
+                        clicked => { root.next-track(); }
+                    }
+                }
+
+                // Waveform Scrubber
+                VerticalLayout {
+                    spacing: 6px;
+
+                    Rectangle {
+                        height: 36px;
+                        background: Theme.bg-card;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.stroke-soft;
+                        clip: true;
+
+                        HorizontalLayout {
+                            padding-left: 4px;
+                            padding-right: 4px;
+                            padding-top: 3px;
+                            padding-bottom: 3px;
+                            spacing: 1px;
+
+                            for bar[idx] in root.waveform-data: Rectangle {
+                                horizontal-stretch: 1;
+                                height: Math.max(2px, parent.height * Math.max(0.06, bar));
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 1.5px;
+                                background: ((idx + 0.5) / Math.max(1, root.waveform-data.length)) <= root.seek-position
+                                    ? Theme.waveform-played
+                                    : Theme.waveform-idle;
+                                animate height { duration: 50ms; easing: ease-out; }
+                            }
+                        }
+
+                        // Playhead line
+                        Rectangle {
+                            x: Math.max(0px, Math.min(parent.width - 2px, parent.width * root.seek-position));
+                            y: 0;
+                            width: 2px;
+                            height: parent.height;
+                            background: Theme.waveform-playhead;
+                        }
+
+                        TouchArea {
+                            enabled: root.has-track;
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.seek(Math.min(1.0, Math.max(0.0, self.mouse-x / max(1px, self.width))));
+                            }
+                            moved => {
+                                if (self.pressed) {
+                                    root.seek(Math.min(1.0, Math.max(0.0, self.mouse-x / max(1px, self.width))));
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text {
+                            text: root.position-text;
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: root.duration-text;
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            font-weight: 600;
+                        }
+                    }
+                }
+            }
+
+            // Right Column: Big Readable Synced Lyrics
+            lyrics_viewport := Rectangle {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                clip: true;
+
+                // Mode 1: Synced Lyrics
+                if root.lines.length > 0: Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    clip: true;
+
+                    TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        scroll-event(e) => {
+                            root.handle-scroll(e.delta-y);
+                            EventResult.accept
+                        }
+                    }
+
+                    for line[idx] in root.lines: Rectangle {
+                        x: 0;
+                        width: parent.width;
+                        y: idx * root.line-height
+                            - root.scroll-offset
+                            + (root.active-line-index >= 0 && idx > root.active-line-index
+                                ? root.active-growth : 0px);
+                        height: idx == root.active-line-index ? root.active-line-height : root.line-height;
+                        background: transparent;
+                        clip: true;
+
+                        animate y { duration: root.is-user-scrolled ? 0ms : 300ms; easing: cubic-bezier(0.25, 1, 0.5, 1); }
+
+                        // Word-by-word karaoke line
+                        if idx == root.active-line-index && root.active-has-words: VerticalLayout {
+                            padding-left: 20px;
+                            padding-right: 20px;
+                            alignment: center;
+                            spacing: 4px;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                for word in root.active-words-row1: Text {
+                                    text: word.text;
+                                    color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : #64748B);
+                                    font-size: 24px;
+                                    font-weight: word.is-sung ? 700 : 500;
+                                    vertical-alignment: center;
+                                    animate color { duration: 100ms; easing: ease-out; }
+                                }
+                            }
+
+                            if root.active-words-row2.length > 0: HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                for word in root.active-words-row2: Text {
+                                    text: word.text;
+                                    color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : #64748B);
+                                    font-size: 24px;
+                                    font-weight: word.is-sung ? 700 : 500;
+                                    vertical-alignment: center;
+                                    animate color { duration: 100ms; easing: ease-out; }
+                                }
+                            }
+                        }
+
+                        // Standard text line
+                        if !(idx == root.active-line-index && root.active-has-words): HorizontalLayout {
+                            padding-left: 20px;
+                            padding-right: 20px;
+                            alignment: start;
+
+                            Text {
+                                text: line.text;
+                                color: idx == root.active-line-index
+                                    ? Theme.lyrics-active
+                                    : (np_line_ta.has-hover ? #E2E8F0 : Theme.lyrics-inactive);
+                                font-size: idx == root.active-line-index ? 24px : 17px;
+                                font-weight: idx == root.active-line-index ? 700 : 500;
+                                wrap: word-wrap;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                animate color, font-size { duration: Theme.motion-base; easing: ease-out; }
+                            }
+                        }
+
+                        np_line_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.resume-sync();
+                                root.seek-to-line(idx);
+                            }
+                            scroll-event(e) => {
+                                root.handle-scroll(e.delta-y);
+                                EventResult.accept
+                            }
+                        }
+                    }
+                }
+
+                // Vignette gradient masks at top and bottom
+                if root.lines.length > 0: Rectangle {
+                    y: 0;
+                    width: 100%;
+                    height: 36px;
+                    background: @linear-gradient(180deg, Theme.bg-primary 0%, transparent 100%);
+                }
+
+                if root.lines.length > 0: Rectangle {
+                    y: parent.height - self.height;
+                    width: 100%;
+                    height: 36px;
+                    background: @linear-gradient(0deg, Theme.bg-primary 0%, transparent 100%);
+                }
+
+                // Resume sync button
+                if root.lines.length > 0 && root.is-user-scrolled && root.active-line-index >= 0: Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height - 24px;
+                    height: 34px;
+                    width: 156px;
+                    border-radius: 17px;
+                    background: np_sync_ta.has-hover ? #7C3AED : #6D28D9;
+                    border-width: 1px;
+                    border-color: #8B5CF6;
+                    drop-shadow-blur: 10px;
+                    drop-shadow-color: #000000cc;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Image {
+                            source: @image-url("../assets/play.svg");
+                            width: 12px;
+                            height: 12px;
+                            colorize: #FFFFFF;
+                            y: (parent.height - self.height) / 2;
+                        }
+                        Text {
+                            text: "Jump to current";
+                            color: #FFFFFF;
+                            font-size: 11px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    np_sync_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.resume-sync(); }
+                    }
+                }
+
+                // Mode 2: Plain Lyrics
+                if root.lines.length == 0 && root.plain-text != "": Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    Text {
+                        x: 20px;
+                        y: 20px;
+                        width: parent.width - 40px;
+                        text: root.plain-text;
+                        color: Theme.text-primary;
+                        font-size: 15px;
+                        wrap: word-wrap;
+                    }
+                }
+
+                // Mode 3: No Lyrics Available Empty State with guidance
+                if root.lines.length == 0 && root.plain-text == "": VerticalLayout {
+                    alignment: center;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        width: 100%;
+                        alignment: center;
+                        Image {
+                            source: @image-url("../assets/lyrics_icon.svg");
+                            width: 52px;
+                            height: 52px;
+                            colorize: Theme.text-dim;
+                        }
+                    }
+
+                    Text {
+                        text: "No Lyrics Available";
+                        color: Theme.text-primary;
+                        font-size: 16px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Fetch synchronized lyrics from online providers or verify track tags.";
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 130px;
+                            height: 34px;
+                            border-radius: 17px;
+                            background: np_fetch_ta.has-hover ? #9D72FF : Theme.accent-violet;
+                            animate background { duration: Theme.motion-fast; easing: ease-out; }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 6px;
+                                Image {
+                                    source: @image-url("../assets/download.svg");
+                                    y: (parent.height - self.height) / 2;
+                                    width: 14px;
+                                    height: 14px;
+                                    colorize: #FFFFFF;
+                                }
+                                Text {
+                                    text: "Fetch Lyrics";
+                                    color: #FFFFFF;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            np_fetch_ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.fetch-lyrics(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

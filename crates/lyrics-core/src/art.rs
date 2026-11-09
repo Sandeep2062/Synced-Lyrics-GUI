@@ -215,7 +215,9 @@ fn is_cover_keyword(stem: &str) -> bool {
         || norm.contains("folder")
         || norm.contains("albumart")
         || norm.contains("artwork")
-        || COVER_FILE_STEMS.iter().any(|&preferred| norm == preferred.replace(['-', '_', ' '], ""))
+        || COVER_FILE_STEMS
+            .iter()
+            .any(|&preferred| norm == preferred.replace(['-', '_', ' '], ""))
 }
 
 /// The cover file stored beside `audio_path`, if there is one.
@@ -252,16 +254,36 @@ fn cover_file_for(directory: &Path, audio_path: &Path) -> Option<PathBuf> {
 
     if !matching_candidates.is_empty() {
         matching_candidates.sort_by(|a, b| {
-            let a_stem = a.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
-            let b_stem = b.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
+            let a_stem = a
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let b_stem = b
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
             let score = |s: &str| -> i32 {
                 let mut sc = 0;
-                if s.contains("large") { sc += 10; }
-                if s.contains("front") { sc += 8; }
-                if s.contains("cover") { sc += 6; }
-                if s.contains("folder") { sc += 4; }
-                if s.contains("albumart") { sc += 3; }
-                if s.contains("small") { sc -= 10; }
+                if s.contains("large") {
+                    sc += 10;
+                }
+                if s.contains("front") {
+                    sc += 8;
+                }
+                if s.contains("cover") {
+                    sc += 6;
+                }
+                if s.contains("folder") {
+                    sc += 4;
+                }
+                if s.contains("albumart") {
+                    sc += 3;
+                }
+                if s.contains("small") {
+                    sc -= 10;
+                }
                 sc
             };
             score(&b_stem).cmp(&score(&a_stem))
@@ -289,7 +311,9 @@ fn stem_matches(path: &Path, stem: &str) -> bool {
         .and_then(|candidate| candidate.to_str())
         .is_some_and(|candidate| {
             candidate.eq_ignore_ascii_case(stem)
-                || candidate.replace(['-', '_', ' '], "").eq_ignore_ascii_case(&stem.replace(['-', '_', ' '], ""))
+                || candidate
+                    .replace(['-', '_', ' '], "")
+                    .eq_ignore_ascii_case(&stem.replace(['-', '_', ' '], ""))
         })
 }
 

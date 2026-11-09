@@ -1,6 +1,7 @@
 use crate::model::{LyricsStatus, Track};
 use crate::providers::{ProviderLyrics, ProviderName};
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
 
@@ -8,6 +9,48 @@ use thiserror::Error;
 pub enum RepositoryError {
     #[error("database operation failed: {0}")]
     Sql(#[from] rusqlite::Error),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatchJobRecord {
+    pub id: i64,
+    pub job_type: String,
+    pub mode: String,
+    pub total_tracks: usize,
+    pub completed_tracks: usize,
+    pub status: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatchJobItemRecord {
+    pub id: i64,
+    pub job_id: i64,
+    pub audio_path: String,
+    pub lrc_path: String,
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    pub issue_reason: Option<String>,
+    pub status: String,
+    pub provider: Option<String>,
+    pub score: Option<f64>,
+    pub selection_reason: Option<String>,
+    pub diff_preview: Option<String>,
+    pub error_message: Option<String>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BatchJobItemDraft {
+    pub audio_path: String,
+    pub lrc_path: String,
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    pub issue_reason: Option<String>,
+    pub diff_preview: Option<String>,
 }
 
 pub struct LibraryDb {
@@ -54,8 +97,8 @@ impl LibraryDb {
             transaction.execute(
                 r#"
                 INSERT INTO tracks
-                    (audio_path, artist, title, album, duration, lrc_path, lrc_status, mtime, last_checked)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    (audio_path, artist, title, album, duration, lrc_path, lrc_status, mtime, last_checked, suspicious_reason, offset_ms)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 ON CONFLICT(audio_path) DO UPDATE SET
                     artist = excluded.artist,
                     title = excluded.title,
@@ -64,6 +107,8 @@ impl LibraryDb {
                     lrc_path = excluded.lrc_path,
                     lrc_status = excluded.lrc_status,
                     mtime = excluded.mtime,
+                    suspicious_reason = excluded.suspicious_reason,
+                    offset_ms = CASE WHEN excluded.offset_ms != 0 THEN excluded.offset_ms ELSE tracks.offset_ms END,
                     updated_at = unixepoch()
                 "#,
                 params![
@@ -76,6 +121,8 @@ impl LibraryDb {
                     status_name(track.status),
                     track.mtime,
                     track.last_checked,
+                    track.suspicious_reason,
+                    track.lyrics_offset_ms,
                 ],
             )?;
         }
@@ -85,7 +132,7 @@ impl LibraryDb {
 
     pub fn tracks(&self) -> Result<Vec<Track>, RepositoryError> {
         let mut statement = self.connection.prepare(
-            "SELECT audio_path, lrc_path, artist, title, album, duration, lrc_status, mtime, last_checked
+            "SELECT audio_path, lrc_path, artist, title, album, duration, lrc_status, mtime, last_checked, suspicious_reason, COALESCE(offset_ms, 0)
              FROM tracks ORDER BY album COLLATE NOCASE, title COLLATE NOCASE",
         )?;
         let tracks = statement
@@ -100,6 +147,8 @@ impl LibraryDb {
                     status: parse_status(&row.get::<_, String>(6)?),
                     mtime: row.get(7)?,
                     last_checked: row.get(8)?,
+                    suspicious_reason: row.get(9)?,
+                    lyrics_offset_ms: row.get(10).unwrap_or(0),
                 })
             })?
             .collect::<Result<Vec<Track>, _>>()?;
@@ -108,7 +157,7 @@ impl LibraryDb {
 
     pub fn track(&self, audio_path: &str) -> Result<Option<Track>, RepositoryError> {
         let mut statement = self.connection.prepare(
-            "SELECT audio_path, lrc_path, artist, title, album, duration, lrc_status, mtime, last_checked
+            "SELECT audio_path, lrc_path, artist, title, album, duration, lrc_status, mtime, last_checked, suspicious_reason, COALESCE(offset_ms, 0)
              FROM tracks WHERE audio_path = ?1",
         )?;
         statement
@@ -123,6 +172,8 @@ impl LibraryDb {
                     status: parse_status(&row.get::<_, String>(6)?),
                     mtime: row.get(7)?,
                     last_checked: row.get(8)?,
+                    suspicious_reason: row.get(9)?,
+                    lyrics_offset_ms: row.get(10).unwrap_or(0),
                 })
             })
             .optional()
@@ -209,11 +260,65 @@ impl LibraryDb {
         source: Option<&str>,
     ) -> Result<(), RepositoryError> {
         self.connection.execute(
-            "UPDATE tracks SET lrc_status = ?1, lyrics_source = ?2, updated_at = unixepoch()
+            "UPDATE tracks SET lrc_status = ?1, lyrics_source = ?2, suspicious_reason = NULL, updated_at = unixepoch()
              WHERE audio_path = ?3",
             params![status_name(status), source, audio_path],
         )?;
         Ok(())
+    }
+
+    pub fn update_track_metadata(
+        &self,
+        audio_path: &str,
+        artist: &str,
+        title: &str,
+        album: &str,
+    ) -> Result<(), RepositoryError> {
+        self.connection.execute(
+            "UPDATE tracks SET artist = ?1, title = ?2, album = ?3, updated_at = unixepoch()
+             WHERE audio_path = ?4",
+            params![artist, title, album, audio_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_lyrics_status_with_reason(
+        &self,
+        audio_path: &str,
+        status: LyricsStatus,
+        source: Option<&str>,
+        reason: Option<&str>,
+    ) -> Result<(), RepositoryError> {
+        self.connection.execute(
+            "UPDATE tracks SET lrc_status = ?1, lyrics_source = ?2, suspicious_reason = ?3, updated_at = unixepoch()
+             WHERE audio_path = ?4",
+            params![status_name(status), source, reason, audio_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_track_offset(
+        &self,
+        audio_path: &str,
+        offset_ms: i64,
+    ) -> Result<(), RepositoryError> {
+        self.connection.execute(
+            "UPDATE tracks SET offset_ms = ?1, updated_at = unixepoch()
+             WHERE audio_path = ?2",
+            params![offset_ms, audio_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_track_offset(&self, audio_path: &str) -> Result<i64, RepositoryError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT COALESCE(offset_ms, 0) FROM tracks WHERE audio_path = ?1")?;
+        let offset = statement
+            .query_row(params![audio_path], |row| row.get(0))
+            .optional()?
+            .unwrap_or(0);
+        Ok(offset)
     }
 
     pub fn history(&self, limit: usize) -> Result<Vec<String>, RepositoryError> {
@@ -277,6 +382,236 @@ impl LibraryDb {
         Ok(())
     }
 
+    pub fn create_batch_job(
+        &self,
+        job_type: &str,
+        mode: &str,
+        items: &[BatchJobItemDraft],
+    ) -> Result<i64, RepositoryError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT INTO batch_jobs (job_type, mode, total_tracks, completed_tracks, status)
+             VALUES (?1, ?2, ?3, 0, 'running')",
+            params![job_type, mode, items.len() as i64],
+        )?;
+        let job_id = transaction.last_insert_rowid();
+
+        for item in items {
+            transaction.execute(
+                "INSERT INTO batch_job_items
+                    (job_id, audio_path, lrc_path, artist, title, album, issue_reason, status, diff_preview)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8)",
+                params![
+                    job_id,
+                    item.audio_path,
+                    item.lrc_path,
+                    item.artist,
+                    item.title,
+                    item.album,
+                    item.issue_reason,
+                    item.diff_preview,
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(job_id)
+    }
+
+    pub fn update_batch_job_status(
+        &self,
+        job_id: i64,
+        status: &str,
+    ) -> Result<(), RepositoryError> {
+        self.connection.execute(
+            "UPDATE batch_jobs SET status = ?1, updated_at = unixepoch() WHERE id = ?2",
+            params![status, job_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_batch_job_item_progress(
+        &self,
+        job_id: i64,
+        audio_path: &str,
+        status: &str,
+        provider: Option<&str>,
+        score: Option<f64>,
+        selection_reason: Option<&str>,
+        diff_preview: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<(), RepositoryError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "UPDATE batch_job_items SET
+                status = ?1,
+                provider = ?2,
+                score = ?3,
+                selection_reason = ?4,
+                diff_preview = COALESCE(?5, diff_preview),
+                error_message = ?6,
+                updated_at = unixepoch()
+             WHERE job_id = ?7 AND audio_path = ?8",
+            params![
+                status,
+                provider,
+                score,
+                selection_reason,
+                diff_preview,
+                error,
+                job_id,
+                audio_path
+            ],
+        )?;
+
+        transaction.execute(
+            "UPDATE batch_jobs SET
+                completed_tracks = (
+                    SELECT COUNT(*) FROM batch_job_items
+                    WHERE job_id = ?1 AND status != 'pending'
+                ),
+                updated_at = unixepoch()
+             WHERE id = ?1",
+            params![job_id],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn get_resumable_batch_job(&self) -> Result<Option<BatchJobRecord>, RepositoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, job_type, mode, total_tracks, completed_tracks, status, created_at, updated_at
+             FROM batch_jobs
+             WHERE status IN ('running', 'paused')
+             ORDER BY id DESC LIMIT 1",
+        )?;
+        let job = statement
+            .query_row([], |row| {
+                Ok(BatchJobRecord {
+                    id: row.get(0)?,
+                    job_type: row.get(1)?,
+                    mode: row.get(2)?,
+                    total_tracks: row.get::<_, i64>(3)? as usize,
+                    completed_tracks: row.get::<_, i64>(4)? as usize,
+                    status: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .optional()?;
+        Ok(job)
+    }
+
+    pub fn get_batch_job_items(
+        &self,
+        job_id: i64,
+    ) -> Result<Vec<BatchJobItemRecord>, RepositoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, job_id, audio_path, lrc_path, artist, title, album, issue_reason, status, provider, score, selection_reason, diff_preview, error_message, updated_at
+             FROM batch_job_items
+             WHERE job_id = ?1
+             ORDER BY id ASC",
+        )?;
+        let items = statement
+            .query_map(params![job_id], |row| {
+                Ok(BatchJobItemRecord {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    audio_path: row.get(2)?,
+                    lrc_path: row.get(3)?,
+                    artist: row.get(4)?,
+                    title: row.get(5)?,
+                    album: row.get(6)?,
+                    issue_reason: row.get(7)?,
+                    status: row.get(8)?,
+                    provider: row.get(9)?,
+                    score: row.get(10)?,
+                    selection_reason: row.get(11)?,
+                    diff_preview: row.get(12)?,
+                    error_message: row.get(13)?,
+                    updated_at: row.get(14)?,
+                })
+            })?
+            .collect::<Result<Vec<BatchJobItemRecord>, _>>()?;
+        Ok(items)
+    }
+
+    pub fn get_pending_batch_job_items(
+        &self,
+        job_id: i64,
+    ) -> Result<Vec<BatchJobItemRecord>, RepositoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, job_id, audio_path, lrc_path, artist, title, album, issue_reason, status, provider, score, selection_reason, diff_preview, error_message, updated_at
+             FROM batch_job_items
+             WHERE job_id = ?1 AND status = 'pending'
+             ORDER BY id ASC",
+        )?;
+        let items = statement
+            .query_map(params![job_id], |row| {
+                Ok(BatchJobItemRecord {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    audio_path: row.get(2)?,
+                    lrc_path: row.get(3)?,
+                    artist: row.get(4)?,
+                    title: row.get(5)?,
+                    album: row.get(6)?,
+                    issue_reason: row.get(7)?,
+                    status: row.get(8)?,
+                    provider: row.get(9)?,
+                    score: row.get(10)?,
+                    selection_reason: row.get(11)?,
+                    diff_preview: row.get(12)?,
+                    error_message: row.get(13)?,
+                    updated_at: row.get(14)?,
+                })
+            })?
+            .collect::<Result<Vec<BatchJobItemRecord>, _>>()?;
+        Ok(items)
+    }
+
+    pub fn get_latest_batch_results(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<BatchJobItemRecord>, RepositoryError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, job_id, audio_path, lrc_path, artist, title, album, issue_reason, status, provider, score, selection_reason, diff_preview, error_message, updated_at
+             FROM batch_job_items
+             WHERE status != 'pending'
+             ORDER BY updated_at DESC, id DESC
+             LIMIT ?1",
+        )?;
+        let items = statement
+            .query_map(params![limit as i64], |row| {
+                Ok(BatchJobItemRecord {
+                    id: row.get(0)?,
+                    job_id: row.get(1)?,
+                    audio_path: row.get(2)?,
+                    lrc_path: row.get(3)?,
+                    artist: row.get(4)?,
+                    title: row.get(5)?,
+                    album: row.get(6)?,
+                    issue_reason: row.get(7)?,
+                    status: row.get(8)?,
+                    provider: row.get(9)?,
+                    score: row.get(10)?,
+                    selection_reason: row.get(11)?,
+                    diff_preview: row.get(12)?,
+                    error_message: row.get(13)?,
+                    updated_at: row.get(14)?,
+                })
+            })?
+            .collect::<Result<Vec<BatchJobItemRecord>, _>>()?;
+        Ok(items)
+    }
+
+    pub fn dismiss_batch_job(&self, job_id: i64) -> Result<(), RepositoryError> {
+        self.connection.execute(
+            "UPDATE batch_jobs SET status = 'cancelled', updated_at = unixepoch() WHERE id = ?1",
+            params![job_id],
+        )?;
+        Ok(())
+    }
+
     fn initialize(&self) -> Result<(), RepositoryError> {
         self.connection.execute_batch(
             "PRAGMA foreign_keys = ON;
@@ -297,6 +632,8 @@ impl LibraryDb {
                  lyrics_source TEXT,
                  mtime REAL,
                  last_checked REAL,
+                 suspicious_reason TEXT,
+                 offset_ms INTEGER NOT NULL DEFAULT 0,
                  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
                  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
              );
@@ -320,7 +657,37 @@ impl LibraryDb {
                  cached_at INTEGER NOT NULL,
                  expires_at INTEGER NOT NULL,
                  PRIMARY KEY (audio_path, provider)
-             );",
+             );
+             CREATE TABLE IF NOT EXISTS batch_jobs (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 job_type TEXT NOT NULL,
+                 mode TEXT NOT NULL,
+                 total_tracks INTEGER NOT NULL,
+                 completed_tracks INTEGER NOT NULL DEFAULT 0,
+                 status TEXT NOT NULL,
+                 created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                 updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+             );
+             CREATE TABLE IF NOT EXISTS batch_job_items (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 job_id INTEGER NOT NULL REFERENCES batch_jobs(id) ON DELETE CASCADE,
+                 audio_path TEXT NOT NULL,
+                 lrc_path TEXT NOT NULL,
+                 artist TEXT NOT NULL,
+                 title TEXT NOT NULL,
+                 album TEXT NOT NULL,
+                 issue_reason TEXT,
+                 status TEXT NOT NULL DEFAULT 'pending',
+                 provider TEXT,
+                 score REAL,
+                 selection_reason TEXT,
+                 diff_preview TEXT,
+                 error_message TEXT,
+                 created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                 updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                 UNIQUE(job_id, audio_path)
+             );
+             CREATE INDEX IF NOT EXISTS idx_batch_job_items_job_status ON batch_job_items(job_id, status);",
         )?;
 
         // Migration: add columns if they don't exist (safe for existing DBs)
@@ -330,6 +697,13 @@ impl LibraryDb {
         let _ = self
             .connection
             .execute("ALTER TABLE tracks ADD COLUMN last_checked REAL", []);
+        let _ = self
+            .connection
+            .execute("ALTER TABLE tracks ADD COLUMN suspicious_reason TEXT", []);
+        let _ = self.connection.execute(
+            "ALTER TABLE tracks ADD COLUMN offset_ms INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
         // Create indexes for migrated columns after ensuring columns exist
         let _ = self.connection.execute(
@@ -469,6 +843,8 @@ mod tests {
                 status: LyricsStatus::Synced,
                 mtime: None,
                 last_checked: None,
+                suspicious_reason: None,
+                lyrics_offset_ms: 0,
             }])
             .unwrap();
 
@@ -548,6 +924,137 @@ mod tests {
         assert_eq!(tracks[0].audio_path, "/legacy/music/song.mp3");
         assert_eq!(tracks[0].artist, "Legacy Artist");
         assert_eq!(tracks[0].status, LyricsStatus::Synced);
+        assert_eq!(tracks[0].suspicious_reason, None);
+    }
+
+    #[test]
+    fn test_suspicious_reason_persisted_and_migrated() {
+        let db = LibraryDb::open_in_memory().unwrap();
+        let track = Track {
+            audio_path: "/music/test.mp3".to_string(),
+            lrc_path: "/music/test.lrc".to_string(),
+            artist: "Artist".to_string(),
+            title: "Title".to_string(),
+            album: "Album".to_string(),
+            duration_seconds: Some(180.0),
+            status: LyricsStatus::Suspicious,
+            mtime: Some(100.0),
+            last_checked: None,
+            suspicious_reason: Some("Offset: +2.00s".to_string()),
+            lyrics_offset_ms: 200,
+        };
+        db.upsert_tracks(&[track.clone()]).unwrap();
+
+        let loaded = db.track("/music/test.mp3").unwrap().unwrap();
+        assert_eq!(loaded.status, LyricsStatus::Suspicious);
+        assert_eq!(loaded.suspicious_reason.as_deref(), Some("Offset: +2.00s"));
+
+        assert_eq!(loaded.lyrics_offset_ms, 200);
+
+        db.update_track_offset("/music/test.mp3", -500).unwrap();
+        assert_eq!(db.get_track_offset("/music/test.mp3").unwrap(), -500);
+        let updated_offset = db.track("/music/test.mp3").unwrap().unwrap();
+        assert_eq!(updated_offset.lyrics_offset_ms, -500);
+
+        db.update_lyrics_status_with_reason(
+            "/music/test.mp3",
+            LyricsStatus::Suspicious,
+            None,
+            Some("Wrong song detected"),
+        )
+        .unwrap();
+        let updated = db.track("/music/test.mp3").unwrap().unwrap();
+        assert_eq!(
+            updated.suspicious_reason.as_deref(),
+            Some("Wrong song detected")
+        );
+
+        db.update_lyrics_status("/music/test.mp3", LyricsStatus::Synced, Some("lrclib"))
+            .unwrap();
+        let synced = db.track("/music/test.mp3").unwrap().unwrap();
+        assert_eq!(synced.status, LyricsStatus::Synced);
+        assert_eq!(synced.suspicious_reason, None);
+        assert_eq!(synced.lyrics_offset_ms, -500);
+    }
+
+    #[test]
+    fn test_batch_job_lifecycle_and_crash_resumption() {
+        let db = LibraryDb::open_in_memory().unwrap();
+        let items = vec![
+            BatchJobItemDraft {
+                audio_path: "/music/track1.mp3".into(),
+                lrc_path: "/music/track1.lrc".into(),
+                artist: "Artist 1".into(),
+                title: "Track 1".into(),
+                album: "Album 1".into(),
+                issue_reason: Some("Missing".into()),
+                diff_preview: None,
+            },
+            BatchJobItemDraft {
+                audio_path: "/music/track2.mp3".into(),
+                lrc_path: "/music/track2.lrc".into(),
+                artist: "Artist 2".into(),
+                title: "Track 2".into(),
+                album: "Album 2".into(),
+                issue_reason: Some("Offset: +1.20s".into()),
+                diff_preview: None,
+            },
+        ];
+
+        let job_id = db
+            .create_batch_job("fix_safe_issues", "safe_issues", &items)
+            .unwrap();
+
+        // 1 item finishes
+        db.update_batch_job_item_progress(
+            job_id,
+            "/music/track1.mp3",
+            "completed",
+            Some("LRCLIB"),
+            Some(0.98),
+            Some("Exact title & artist match"),
+            Some("+ [00:01]line"),
+            None,
+        )
+        .unwrap();
+
+        // Check resumable job before simulated crash
+        let resumable = db
+            .get_resumable_batch_job()
+            .unwrap()
+            .expect("job should be resumable");
+        assert_eq!(resumable.id, job_id);
+        assert_eq!(resumable.total_tracks, 2);
+        assert_eq!(resumable.completed_tracks, 1);
+        assert_eq!(resumable.status, "running");
+
+        // Pending items to resume
+        let pending = db.get_pending_batch_job_items(job_id).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].audio_path, "/music/track2.mp3");
+
+        // Complete item 2
+        db.update_batch_job_item_progress(
+            job_id,
+            "/music/track2.mp3",
+            "completed",
+            Some("Internal"),
+            Some(1.0),
+            Some("Offset adjusted"),
+            Some("- [00:01]\n+ [00:02]"),
+            None,
+        )
+        .unwrap();
+
+        db.update_batch_job_status(job_id, "completed").unwrap();
+
+        // No more resumable jobs
+        assert!(db.get_resumable_batch_job().unwrap().is_none());
+
+        // Latest result logs
+        let logs = db.get_latest_batch_results(10).unwrap();
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0].provider.as_deref(), Some("Internal"));
+        assert_eq!(logs[1].provider.as_deref(), Some("LRCLIB"));
     }
 }
-

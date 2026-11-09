@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Synced Lyrics GUI - macOS Bundle and DMG Builder
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 TARGET_DIR="${2:-target/release}"
 OUTPUT_DIR="${3:-dist}"
 

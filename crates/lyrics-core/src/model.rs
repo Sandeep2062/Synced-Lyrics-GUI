@@ -28,6 +28,9 @@ pub struct Track {
     pub status: LyricsStatus,
     pub mtime: Option<f64>,
     pub last_checked: Option<f64>,
+    pub suspicious_reason: Option<String>,
+    #[serde(default)]
+    pub lyrics_offset_ms: i64,
 }
 
 impl Track {

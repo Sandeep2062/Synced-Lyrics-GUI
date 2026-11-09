@@ -1,4 +1,5 @@
-use super::{LyricsProvider, ProviderError, ProviderLyrics, ProviderName};
+use super::{LyricsProvider, ProviderError, ProviderName};
+use crate::matching::Candidate;
 use crate::model::Track;
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -104,7 +105,7 @@ impl MusixmatchProvider {
         Ok(token)
     }
 
-    fn search_builtin(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search_builtin(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         let token = self.get_user_token()?;
         let now_str = Self::current_time_ms().to_string();
         let query_str = format!("{} {}", track.title, track.artist);
@@ -141,69 +142,82 @@ impl MusixmatchProvider {
             .json::<DesktopSearchResponse>()
             .map_err(|e| ProviderError::Parse(e.to_string()))?;
 
-        let track_id = search_payload
+        let Some(track_list) = search_payload
             .message
             .and_then(|m| m.body)
             .and_then(|b| b.track_list)
-            .and_then(|list| list.into_iter().next())
-            .and_then(|item| item.track)
-            .and_then(|t| t.track_id);
-
-        let Some(track_id) = track_id else {
-            return Ok(None);
+        else {
+            return Ok(Vec::new());
         };
 
-        // Step 2: Get subtitle (LRC)
-        let now_str = Self::current_time_ms().to_string();
-        let sub_url = format!("{DESKTOP_API_URL}/track.subtitle.get");
-        let response = self
-            .client
-            .get(&sub_url)
-            .query(&[
-                ("track_id", track_id.to_string().as_str()),
-                ("subtitle_format", "lrc"),
-                ("app_id", APP_ID),
-                ("usertoken", token.as_str()),
-                ("t", now_str.as_str()),
-            ])
-            .send()
-            .map_err(|e| ProviderError::Request(e.to_string()))?;
+        let mut candidates = Vec::new();
+        for item in track_list.into_iter().take(5) {
+            let Some(dt) = item.track else { continue };
+            let Some(track_id) = dt.track_id else {
+                continue;
+            };
 
-        if response.status().as_u16() == 429 {
-            return Err(ProviderError::RateLimited {
-                retry_after_seconds: Some(60),
-            });
+            let cand_title = dt.track_name.unwrap_or_else(|| track.title.clone());
+            let cand_artist = dt.artist_name.unwrap_or_else(|| track.artist.clone());
+            let cand_album = dt.album_name.filter(|s| !s.trim().is_empty());
+            let cand_duration = dt.track_length;
+
+            // Step 2: Get subtitle (LRC)
+            let now_str = Self::current_time_ms().to_string();
+            let sub_url = format!("{DESKTOP_API_URL}/track.subtitle.get");
+            let sub_resp = self
+                .client
+                .get(&sub_url)
+                .query(&[
+                    ("track_id", track_id.to_string().as_str()),
+                    ("subtitle_format", "lrc"),
+                    ("app_id", APP_ID),
+                    ("usertoken", token.as_str()),
+                    ("t", now_str.as_str()),
+                ])
+                .send();
+
+            let response = match sub_resp {
+                Ok(resp) => resp,
+                Err(_) => continue,
+            };
+
+            if response.status().as_u16() == 429 {
+                return Err(ProviderError::RateLimited {
+                    retry_after_seconds: Some(60),
+                });
+            }
+            if !response.status().is_success() {
+                continue;
+            }
+
+            let Ok(sub_payload) = response.json::<ApiResponse>() else {
+                continue;
+            };
+
+            if let Some(text) = sub_payload
+                .message
+                .and_then(|m| m.body)
+                .and_then(|b| b.subtitle)
+                .and_then(|s| s.subtitle_body)
+                .filter(|t| !t.trim().is_empty())
+            {
+                candidates.push(Candidate {
+                    title: cand_title,
+                    artist: cand_artist,
+                    album: cand_album,
+                    duration_seconds: cand_duration,
+                    plain: Some(strip_timestamps(&text)),
+                    synced: Some(text),
+                    provider: ProviderName::Musixmatch,
+                });
+            }
         }
-        if !response.status().is_success() {
-            return Err(ProviderError::Request(format!(
-                "Musixmatch track.subtitle.get returned HTTP {}",
-                response.status()
-            )));
-        }
 
-        let sub_payload = response
-            .json::<ApiResponse>()
-            .map_err(|e| ProviderError::Parse(e.to_string()))?;
-
-        if let Some(text) = sub_payload
-            .message
-            .and_then(|m| m.body)
-            .and_then(|b| b.subtitle)
-            .and_then(|s| s.subtitle_body)
-            .filter(|t| !t.trim().is_empty())
-        {
-            return Ok(Some(ProviderLyrics {
-                provider: ProviderName::Musixmatch,
-                plain: Some(strip_timestamps(&text)),
-                synced: Some(text),
-                confidence: 0.9,
-            }));
-        }
-
-        Ok(None)
+        Ok(candidates)
     }
 
-    fn search_api_key(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search_api_key(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         let query = [
             ("q_track", track.title.as_str()),
             ("q_artist", track.artist.as_str()),
@@ -217,12 +231,15 @@ impl MusixmatchProvider {
             .and_then(|subtitle| subtitle.subtitle_body)
             .filter(|text| !text.trim().is_empty())
         {
-            return Ok(Some(ProviderLyrics {
-                provider: ProviderName::Musixmatch,
+            return Ok(vec![Candidate {
+                title: track.title.clone(),
+                artist: track.artist.clone(),
+                album: (!track.album.trim().is_empty()).then(|| track.album.clone()),
+                duration_seconds: track.duration_seconds,
                 plain: Some(strip_timestamps(&text)),
                 synced: Some(text),
-                confidence: 0.9,
-            }));
+                provider: ProviderName::Musixmatch,
+            }]);
         }
 
         let lyrics = self.request("matcher.lyrics.get", &query)?;
@@ -232,12 +249,20 @@ impl MusixmatchProvider {
             .and_then(|body| body.lyrics)
             .and_then(|lyrics| lyrics.lyrics_body)
             .filter(|text| !text.trim().is_empty());
-        Ok(plain.map(|plain| ProviderLyrics {
-            provider: ProviderName::Musixmatch,
-            synced: None,
-            plain: Some(plain),
-            confidence: 0.7,
-        }))
+
+        if let Some(plain) = plain {
+            return Ok(vec![Candidate {
+                title: track.title.clone(),
+                artist: track.artist.clone(),
+                album: (!track.album.trim().is_empty()).then(|| track.album.clone()),
+                duration_seconds: track.duration_seconds,
+                synced: None,
+                plain: Some(plain),
+                provider: ProviderName::Musixmatch,
+            }]);
+        }
+
+        Ok(Vec::new())
     }
 }
 
@@ -246,7 +271,7 @@ impl LyricsProvider for MusixmatchProvider {
         ProviderName::Musixmatch
     }
 
-    fn search(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         if self.api_key.trim().is_empty() {
             self.search_builtin(track)
         } else {
@@ -332,8 +357,12 @@ struct DesktopTrackItem {
 }
 
 #[derive(Debug, Deserialize)]
-struct DesktopTrack {
-    track_id: Option<u64>,
+pub struct DesktopTrack {
+    pub track_id: Option<u64>,
+    pub track_name: Option<String>,
+    pub artist_name: Option<String>,
+    pub album_name: Option<String>,
+    pub track_length: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -417,5 +446,51 @@ mod tests {
             payload.message.unwrap().body.unwrap().user_token.unwrap(),
             "sample_token_xyz"
         );
+    }
+
+    #[test]
+    fn parses_desktop_search_multiple_tracks() {
+        let payload: DesktopSearchResponse = serde_json::from_str(
+            r#"{
+                "message": {
+                    "body": {
+                        "track_list": [
+                            {
+                                "track": {
+                                    "track_id": 101,
+                                    "track_name": "First Track",
+                                    "artist_name": "First Artist",
+                                    "album_name": "First Album",
+                                    "track_length": 205.0
+                                }
+                            },
+                            {
+                                "track": {
+                                    "track_id": 102,
+                                    "track_name": "Second Track",
+                                    "artist_name": "Second Artist",
+                                    "album_name": "Second Album",
+                                    "track_length": 190.0
+                                }
+                            }
+                        ]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let list = payload.message.unwrap().body.unwrap().track_list.unwrap();
+        assert_eq!(list.len(), 2);
+        let t1 = list[0].track.as_ref().unwrap();
+        assert_eq!(t1.track_id, Some(101));
+        assert_eq!(t1.track_name.as_deref(), Some("First Track"));
+        assert_eq!(t1.artist_name.as_deref(), Some("First Artist"));
+        assert_eq!(t1.album_name.as_deref(), Some("First Album"));
+        assert_eq!(t1.track_length, Some(205.0));
+
+        let t2 = list[1].track.as_ref().unwrap();
+        assert_eq!(t2.track_id, Some(102));
+        assert_eq!(t2.track_name.as_deref(), Some("Second Track"));
     }
 }

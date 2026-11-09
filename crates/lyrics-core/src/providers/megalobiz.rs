@@ -1,10 +1,12 @@
-use super::{LyricsProvider, ProviderError, ProviderLyrics, ProviderName};
+use super::{LyricsProvider, ProviderError, ProviderName};
+use crate::matching::Candidate;
 use crate::model::Track;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
 use std::time::Duration;
 
 const SEARCH_URL: &str = "https://www.megalobiz.com/search/all";
+const TOP_N: usize = 3;
 
 pub struct MegalobizProvider {
     client: Client,
@@ -20,6 +22,10 @@ impl MegalobizProvider {
             .map_err(|e| ProviderError::Request(e.to_string()))?;
         Ok(Self { client })
     }
+
+    pub fn from_client(client: Client) -> Self {
+        Self { client }
+    }
 }
 
 impl LyricsProvider for MegalobizProvider {
@@ -27,7 +33,7 @@ impl LyricsProvider for MegalobizProvider {
         ProviderName::Megalobiz
     }
 
-    fn search(&self, track: &Track) -> Result<Option<ProviderLyrics>, ProviderError> {
+    fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         let query = format!("{} {}", track.artist, track.title);
         let resp = self
             .client
@@ -52,37 +58,59 @@ impl LyricsProvider for MegalobizProvider {
         let document = Html::parse_document(&html_text);
 
         let link_selector = Selector::parse(".entity_name a").unwrap();
-        let link_element = document.select(&link_selector).next();
+        let links: Vec<_> = document.select(&link_selector).take(TOP_N).collect();
 
-        if let Some(link) = link_element {
-            if let Some(href) = link.value().attr("href") {
-                let detail_url = format!("https://www.megalobiz.com{}", href);
-                let detail_resp = self
-                    .client
-                    .get(&detail_url)
-                    .send()
-                    .map_err(|e| ProviderError::Request(e.to_string()))?;
+        let mut candidates = Vec::new();
+        for link in links {
+            let Some(href) = link.value().attr("href") else {
+                continue;
+            };
 
-                let detail_html = detail_resp
-                    .text()
-                    .map_err(|e| ProviderError::Parse(e.to_string()))?;
-                let detail_doc = Html::parse_document(&detail_html);
+            let link_text = link.text().collect::<Vec<_>>().join(" ").trim().to_string();
+            let (cand_title, cand_artist) = if let Some((left, right)) = link_text.split_once(" - ")
+            {
+                (right.trim().to_string(), left.trim().to_string())
+            } else if !link_text.is_empty() {
+                (link_text, track.artist.clone())
+            } else {
+                (track.title.clone(), track.artist.clone())
+            };
 
-                let lrc_selector = Selector::parse("span.lyrics_details").unwrap();
-                let lrc_element = detail_doc.select(&lrc_selector).next();
+            let detail_url = format!("https://www.megalobiz.com{}", href);
+            let detail_resp = match self.client.get(&detail_url).send() {
+                Ok(resp) => resp,
+                Err(_) => continue,
+            };
 
-                if let Some(lrc) = lrc_element {
-                    let text = lrc.text().collect::<Vec<_>>().join("");
-                    return Ok(Some(ProviderLyrics {
+            if detail_resp.status().as_u16() == 429 {
+                return Err(ProviderError::RateLimited {
+                    retry_after_seconds: None,
+                });
+            }
+
+            let Ok(detail_html) = detail_resp.text() else {
+                continue;
+            };
+            let detail_doc = Html::parse_document(&detail_html);
+
+            let lrc_selector = Selector::parse("span.lyrics_details").unwrap();
+            if let Some(lrc) = detail_doc.select(&lrc_selector).next() {
+                let text = lrc.text().collect::<Vec<_>>().join("");
+                if !text.trim().is_empty() {
+                    candidates.push(Candidate {
+                        title: cand_title,
+                        artist: cand_artist,
+                        album: None,
+                        duration_seconds: None,
                         synced: Some(text),
                         plain: None,
-                        confidence: 0.7,
-                        provider: self.name(),
-                    }));
+                        provider: ProviderName::Megalobiz,
+                    });
                 }
             }
         }
-        Ok(None)
+
+        Ok(candidates)
     }
 }
 
@@ -96,18 +124,19 @@ mod tests {
             <html>
                 <body>
                     <div class="entity_name">
-                        <a href="/lyrics/something">Link</a>
+                        <a href="/lyrics/something">Artist - Title</a>
+                    </div>
+                    <div class="entity_name">
+                        <a href="/lyrics/second">Another Artist - Second Title</a>
                     </div>
                 </body>
             </html>
         "#;
         let document = Html::parse_document(html_text);
         let link_selector = Selector::parse(".entity_name a").unwrap();
-        let link_element = document.select(&link_selector).next();
-        assert!(link_element.is_some());
-        assert_eq!(
-            link_element.unwrap().value().attr("href"),
-            Some("/lyrics/something")
-        );
+        let links: Vec<_> = document.select(&link_selector).collect();
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].value().attr("href"), Some("/lyrics/something"));
+        assert_eq!(links[1].value().attr("href"), Some("/lyrics/second"));
     }
 }

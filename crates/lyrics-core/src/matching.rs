@@ -1,4 +1,5 @@
 use crate::model::Track;
+use crate::providers::ProviderName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use unicode_normalization::UnicodeNormalization;
@@ -10,6 +11,9 @@ pub struct Candidate {
     pub artist: String,
     pub album: Option<String>,
     pub duration_seconds: Option<f64>,
+    pub synced: Option<String>,
+    pub plain: Option<String>,
+    pub provider: ProviderName,
 }
 
 impl Candidate {
@@ -24,7 +28,30 @@ impl Candidate {
             artist: artist.into(),
             album,
             duration_seconds,
+            synced: None,
+            plain: None,
+            provider: ProviderName::Lrclib,
         }
+    }
+
+    pub fn with_lyrics(
+        mut self,
+        synced: Option<String>,
+        plain: Option<String>,
+        provider: ProviderName,
+    ) -> Self {
+        self.synced = synced;
+        self.plain = plain;
+        self.provider = provider;
+        self
+    }
+
+    pub fn best_text(&self) -> Option<&str> {
+        self.synced.as_deref().or(self.plain.as_deref())
+    }
+
+    pub fn is_synced(&self) -> bool {
+        self.synced.is_some()
     }
 }
 
@@ -197,7 +224,9 @@ pub fn clean_title(title: &str) -> String {
 }
 
 fn is_four_digit_year(s: &str) -> bool {
-    s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) && (s.starts_with("19") || s.starts_with("20"))
+    s.len() == 4
+        && s.chars().all(|c| c.is_ascii_digit())
+        && (s.starts_with("19") || s.starts_with("20"))
 }
 
 fn is_remaster_year(s: &str) -> bool {
@@ -247,7 +276,10 @@ fn strip_suffix_noise(s: &str) -> String {
     for sep in &[" - ", " / "] {
         if let Some((head, tail)) = cur.rsplit_once(sep) {
             let tail_lower = tail.trim().to_ascii_lowercase();
-            if SUFFIX_NOISE_PATTERNS.iter().any(|&p| tail_lower == p || tail_lower.starts_with(p)) {
+            if SUFFIX_NOISE_PATTERNS
+                .iter()
+                .any(|&p| tail_lower == p || tail_lower.starts_with(p))
+            {
                 cur = head.trim();
             }
         }
@@ -425,10 +457,11 @@ pub fn score_candidate(track: &Track, cand: &Candidate) -> MatchScore {
     };
 
     // Album scoring (only penalized when both album fields are populated and known)
-    let (album_score, album_known) = match (track.album.trim(), cand.album.as_deref().map(str::trim)) {
-        (t, Some(c)) if !t.is_empty() && !c.is_empty() => (similarity(t, c), true),
-        _ => (1.0, false),
-    };
+    let (album_score, album_known) =
+        match (track.album.trim(), cand.album.as_deref().map(str::trim)) {
+            (t, Some(c)) if !t.is_empty() && !c.is_empty() => (similarity(t, c), true),
+            _ => (1.0, false),
+        };
 
     // Duration scoring
     let (duration_score, duration_known) =
@@ -652,10 +685,7 @@ mod tests {
             ("JUST 17 FREESTYLE", "JUST 17 FREESTYLE"),
             ("M 3 N T H 0 L (Ft. Yung Bruh)", "M 3 N T H 0 L"),
             ("K1LL1N M3 (Ft. Gravestones)", "K1LL1N M3"),
-            (
-                "H3AV3N NOW (Ft. Wicca Phase Springs Eternal)",
-                "H3AV3N NOW",
-            ),
+            ("H3AV3N NOW (Ft. Wicca Phase Springs Eternal)", "H3AV3N NOW"),
             ("Memory (feat. Cold Hart) (2020)", "Memory"),
             ("Lovegang (feat. Cold Hart)", "Lovegang"),
             ("Bodybag (Explicit)", "Bodybag"),
@@ -709,6 +739,8 @@ mod tests {
             status: LyricsStatus::Missing,
             mtime: None,
             last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
         };
 
         // Candidate with Artist and Title reversed
@@ -716,8 +748,15 @@ mod tests {
         let score = score_candidate(&track, &cand);
 
         assert!(score.title >= 0.90, "Swapped title score: {}", score.title);
-        assert!(score.artist >= 0.90, "Swapped artist score: {}", score.artist);
-        assert!(score.is_match(), "Should match swapped candidate: {score:?}");
+        assert!(
+            score.artist >= 0.90,
+            "Swapped artist score: {}",
+            score.artist
+        );
+        assert!(
+            score.is_match(),
+            "Should match swapped candidate: {score:?}"
+        );
     }
 
     #[test]
@@ -732,6 +771,8 @@ mod tests {
             status: LyricsStatus::Missing,
             mtime: None,
             last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
         };
 
         // Candidate has featured artist and extra words
@@ -761,6 +802,8 @@ mod tests {
             status: LyricsStatus::Missing,
             mtime: None,
             last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
         };
 
         let cand = Candidate::new("First Love", "宇多田ヒカル", None, Some(250.5));
@@ -788,17 +831,26 @@ mod tests {
             status: LyricsStatus::Missing,
             mtime: None,
             last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
         };
 
         // 1. Near miss: "3 Am" is a different track
         let cand_diff_title = Candidate::new("3 Am", "Cold Hart", None, Some(120.0));
         let score_diff_title = score_candidate(&track, &cand_diff_title);
-        assert!(!score_diff_title.is_match(), "Different number title should not match: {score_diff_title:?}");
+        assert!(
+            !score_diff_title.is_match(),
+            "Different number title should not match: {score_diff_title:?}"
+        );
 
         // 2. Near miss: Elton John & Dua Lipa "Cold Heart" vs "Cold Hart"
-        let cand_cold_heart = Candidate::new("Cold Heart", "Elton John, Dua Lipa", None, Some(200.0));
+        let cand_cold_heart =
+            Candidate::new("Cold Heart", "Elton John, Dua Lipa", None, Some(200.0));
         let score_cold_heart = score_candidate(&track, &cand_cold_heart);
-        assert!(!score_cold_heart.is_match(), "Cold Heart by Elton John should not match Cold Hart");
+        assert!(
+            !score_cold_heart.is_match(),
+            "Cold Heart by Elton John should not match Cold Hart"
+        );
 
         // 3. Near miss: Same title but different artist ("Hello" by Adele vs Lionel Richie)
         let adele_track = Track {
@@ -811,16 +863,24 @@ mod tests {
             status: LyricsStatus::Missing,
             mtime: None,
             last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
         };
         let lionel_cand = Candidate::new("Hello", "Lionel Richie", None, Some(295.0));
         let score_lionel = score_candidate(&adele_track, &lionel_cand);
-        assert!(!score_lionel.is_match(), "Different artist must not match: {score_lionel:?}");
+        assert!(
+            !score_lionel.is_match(),
+            "Different artist must not match: {score_lionel:?}"
+        );
 
         // 4. Near miss: Significant duration discrepancy (e.g. > 10s difference)
         let cand_long = Candidate::new("2 Am", "Cold Hart", None, Some(240.0)); // 240s vs 120s
         let score_long = score_candidate(&track, &cand_long);
         assert_eq!(score_long.duration, 0.0);
-        assert!(!score_long.is_match(), "Duration mismatch >= 10s must fail match");
+        assert!(
+            !score_long.is_match(),
+            "Duration mismatch >= 10s must fail match"
+        );
     }
 
     #[test]

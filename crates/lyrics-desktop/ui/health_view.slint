@@ -1,0 +1,1035 @@
+import { Theme } from "theme.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
+import { CoverTile, FilterChip, IconButton, StatusPill, TextField } from "components.slint";
+
+export struct HealthTrackRow {
+    path: string,
+    title: string,
+    artist: string,
+    album: string,
+    duration: string,
+    status: string,
+    category: string,
+    category-label: string,
+    reason: string,
+    is-safe: bool,
+    suggested-offset-ms: int,
+}
+
+export struct HealthResultLog {
+    timestamp: string,
+    title: string,
+    artist: string,
+    provider: string,
+    score-text: string,
+    selection-reason: string,
+    status-text: string,
+    status-type: string,
+}
+
+export struct PreviewDiffItem {
+    path: string,
+    title: string,
+    artist: string,
+    issue-category: string,
+    action-label: string,
+    provider: string,
+    score-text: string,
+    selection-reason: string,
+    diff-text: string,
+}
+
+export component HealthView inherits Rectangle {
+    // Health statistics
+    in property <int> total-count: 0;
+    in property <int> synced-count: 0;
+    in property <int> plain-count: 0;
+    in property <int> missing-count: 0;
+    in property <int> suspicious-count: 0;
+    in property <int> safe-issues-count: 0;
+    in property <int> wrong-song-count: 0;
+    in property <int> offset-count: 0;
+    in property <int> too-short-long-count: 0;
+
+    // Resumable state
+    in property <bool> has-resumable-job: false;
+    in property <string> resumable-progress-text: "";
+
+    // Live progress state
+    in property <bool> is-running: false;
+    in property <bool> is-paused: false;
+    in property <float> progress: 0.0;
+    in property <string> progress-text: "0 / 0";
+    in property <string> current-track-text: "";
+
+    // Sub-views: 0 = Issues, 1 = Result Log
+    in-out property <int> active-view-tab: 0;
+    in-out property <int> issue-filter: 0;
+    in-out property <string> search-text: "";
+
+    // Data lists
+    in property <[HealthTrackRow]> issues: [];
+    in property <[HealthResultLog]> result-logs: [];
+
+    // Preview Diff Dialog
+    in-out property <bool> preview-modal-open: false;
+    in property <[PreviewDiffItem]> preview-items: [];
+    in-out property <int> preview-selected-index: 0;
+    in-out property <bool> backup-enabled: true;
+
+    // Callbacks
+    callback re-audit();
+    callback fix-all-safe();
+    callback preview-single-issue(int);
+    callback apply-fixes();
+    callback cancel-preview();
+    callback resume-batch();
+    callback dismiss-resumable();
+    callback pause-resume-batch();
+    callback stop-batch();
+    callback filter-changed(int);
+    callback search-changed(string);
+    callback view-tab-changed(int);
+    callback select-preview-item(int);
+    callback toggle-backup(bool);
+
+    background: Theme.bg-primary;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: 12px;
+
+        // -------------------------------------------------------------------
+        // 1. Metric Cards Header: Counts per status
+        // -------------------------------------------------------------------
+        HorizontalLayout {
+            spacing: 10px;
+            height: 72px;
+
+            // Total Tracks
+            Rectangle {
+                background: #0B0D13;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: Theme.stroke-soft;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: root.total-count; color: Theme.text-primary; font-size: 20px; font-weight: 800; horizontal-alignment: center; }
+                    Text { text: "Total Tracks"; color: Theme.text-dim; font-size: 11px; font-weight: 600; horizontal-alignment: center; }
+                }
+            }
+
+            // Synced / Healthy
+            Rectangle {
+                background: #061B12;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: #10B98135;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: root.synced-count; color: Theme.status-synced; font-size: 20px; font-weight: 800; horizontal-alignment: center; }
+                    Text { text: "Synced (Healthy)"; color: #34D399; font-size: 11px; font-weight: 600; horizontal-alignment: center; }
+                }
+            }
+
+            // Missing Lyrics
+            Rectangle {
+                background: #200B11;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: #F43F5E35;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: root.missing-count; color: Theme.status-missing; font-size: 20px; font-weight: 800; horizontal-alignment: center; }
+                    Text { text: "Missing Lyrics"; color: #FB7185; font-size: 11px; font-weight: 600; horizontal-alignment: center; }
+                }
+            }
+
+            // Suspicious / Quality Issues
+            Rectangle {
+                background: #241407;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: #F59E0B35;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: root.suspicious-count; color: Theme.status-suspicious; font-size: 20px; font-weight: 800; horizontal-alignment: center; }
+                    Text { text: "Suspicious Issues"; color: #FBBF24; font-size: 11px; font-weight: 600; horizontal-alignment: center; }
+                }
+            }
+
+            // Plain Lyrics
+            Rectangle {
+                background: #0A1424;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: #3B82F635;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text { text: root.plain-count; color: Theme.status-plain; font-size: 20px; font-weight: 800; horizontal-alignment: center; }
+                    Text { text: "Plain Lyrics"; color: #60A5FA; font-size: 11px; font-weight: 600; horizontal-alignment: center; }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 2. Resumable Crash Recovery Banner (Shown if previous run interrupted)
+        // -------------------------------------------------------------------
+        if root.has-resumable-job: Rectangle {
+            height: 44px;
+            background: #261605;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: #D97706;
+
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    Text { text: "⚠️"; font-size: 15px; vertical-alignment: center; }
+                    Text {
+                        text: "Interrupted batch run detected: " + root.resumable-progress-text;
+                        color: #FDE68A;
+                        font-size: 13px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+
+                    // Resume button
+                    Rectangle {
+                        height: 28px;
+                        background: #F59E0B;
+                        border-radius: Theme.radius-xs;
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.resume-batch(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px; padding-right: 12px; alignment: center;
+                            Text { text: "Resume Batch Run"; color: #000000; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+                        }
+                    }
+
+                    // Dismiss button
+                    Rectangle {
+                        height: 28px;
+                        background: #3B240B;
+                        border-radius: Theme.radius-xs;
+                        border-width: 1px;
+                        border-color: #78350F;
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.dismiss-resumable(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 10px; padding-right: 10px; alignment: center;
+                            Text { text: "Dismiss"; color: #D1D5DB; font-size: 12px; vertical-alignment: center; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 3. Live Batch Execution Bar (Shown when a batch fix is running)
+        // -------------------------------------------------------------------
+        if root.is-running: Rectangle {
+            height: 52px;
+            background: #110B22;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.accent-violet;
+
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 4px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: root.is-paused ? "⏸ Paused: " + root.current-track-text : "⚙ Fixing: " + root.current-track-text;
+                        color: Theme.text-primary;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: root.progress-text; color: Theme.accent-violet; font-size: 12px; font-weight: 700; }
+                        Rectangle {
+                            height: 24px;
+                            background: root.is-paused ? #10B981 : #374151;
+                            border-radius: Theme.radius-xs;
+                            TouchArea { mouse-cursor: pointer; clicked => { root.pause-resume-batch(); } }
+                            HorizontalLayout { padding-left: 8px; padding-right: 8px; Text { text: root.is-paused ? "Resume" : "Pause"; color: #FFFFFF; font-size: 11px; font-weight: 600; vertical-alignment: center; } }
+                        }
+                        Rectangle {
+                            height: 24px;
+                            background: #E11D48;
+                            border-radius: Theme.radius-xs;
+                            TouchArea { mouse-cursor: pointer; clicked => { root.stop-batch(); } }
+                            HorizontalLayout { padding-left: 8px; padding-right: 8px; Text { text: "Stop / Cancel"; color: #FFFFFF; font-size: 11px; font-weight: 600; vertical-alignment: center; } }
+                        }
+                    }
+                }
+
+                // Progress line
+                Rectangle {
+                    height: 5px;
+                    background: #251B3D;
+                    border-radius: 2px;
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * root.progress;
+                        height: parent.height;
+                        background: Theme.accent-violet;
+                        border-radius: 2px;
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 4. Action Toolbar & Subtabs
+        // -------------------------------------------------------------------
+        HorizontalLayout {
+            height: 36px;
+            spacing: 12px;
+            alignment: space-between;
+
+            // Left: Subtab toggle: [Issues List] vs [Result Log]
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                Rectangle {
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    background: root.active-view-tab == 0 ? #1B152E : transparent;
+                    border-width: 1px;
+                    border-color: root.active-view-tab == 0 ? Theme.accent-violet : Theme.stroke-soft;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.active-view-tab = 0; root.view-tab-changed(0); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 12px; padding-right: 12px; alignment: center;
+                        Text {
+                            text: "Issues (" + root.issues.length + ")";
+                            color: root.active-view-tab == 0 ? Theme.text-primary : Theme.text-muted;
+                            font-size: 13px;
+                            font-weight: root.active-view-tab == 0 ? 700 : 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    background: root.active-view-tab == 1 ? #1B152E : transparent;
+                    border-width: 1px;
+                    border-color: root.active-view-tab == 1 ? Theme.accent-violet : Theme.stroke-soft;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.active-view-tab = 1; root.view-tab-changed(1); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 12px; padding-right: 12px; alignment: center;
+                        Text {
+                            text: "Result Log (" + root.result-logs.length + ")";
+                            color: root.active-view-tab == 1 ? Theme.text-primary : Theme.text-muted;
+                            font-size: 13px;
+                            font-weight: root.active-view-tab == 1 ? 700 : 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // Right: Primary Actions (Fix All Safe Issues + Re-Audit)
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                // Fix All Safe Issues
+                Rectangle {
+                    height: 34px;
+                    background: root.safe-issues-count > 0 ? Theme.accent-violet : #2A2140;
+                    border-radius: Theme.radius-sm;
+                    opacity: root.safe-issues-count > 0 ? 1.0 : 0.6;
+                    TouchArea {
+                        enabled: root.safe-issues-count > 0;
+                        mouse-cursor: root.safe-issues-count > 0 ? pointer : default;
+                        clicked => { root.fix-all-safe(); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 6px;
+                        alignment: center;
+                        Text { text: "⚡"; font-size: 13px; vertical-alignment: center; }
+                        Text {
+                            text: "Fix All Safe Issues (" + root.safe-issues-count + ")";
+                            color: #FFFFFF;
+                            font-size: 13px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Re-audit button
+                Rectangle {
+                    height: 34px;
+                    background: #141722;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: Theme.stroke-soft;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.re-audit(); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 6px;
+                        alignment: center;
+                        Text { text: "🔄"; font-size: 12px; vertical-alignment: center; }
+                        Text { text: "Re-Audit"; color: Theme.text-primary; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 5. Filter & Search Bar (When on Issues tab)
+        // -------------------------------------------------------------------
+        if root.active-view-tab == 0: HorizontalLayout {
+            height: 32px;
+            spacing: 8px;
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                FilterChip {
+                    label: "All Issues";
+                    selected: root.issue-filter == 0;
+                    clicked => { root.issue-filter = 0; root.filter-changed(0); }
+                }
+                FilterChip {
+                    label: "Missing (" + root.missing-count + ")";
+                    selected: root.issue-filter == 1;
+                    clicked => { root.issue-filter = 1; root.filter-changed(1); }
+                }
+                FilterChip {
+                    label: "Wrong Song (" + root.wrong-song-count + ")";
+                    selected: root.issue-filter == 2;
+                    clicked => { root.issue-filter = 2; root.filter-changed(2); }
+                }
+                FilterChip {
+                    label: "Offset (" + root.offset-count + ")";
+                    selected: root.issue-filter == 3;
+                    clicked => { root.issue-filter = 3; root.filter-changed(3); }
+                }
+                FilterChip {
+                    label: "Too Short/Long (" + root.too-short-long-count + ")";
+                    selected: root.issue-filter == 4;
+                    clicked => { root.issue-filter = 4; root.filter-changed(4); }
+                }
+            }
+
+            TextField {
+                width: 240px;
+                placeholder: "Search issue tracks...";
+                with-search-icon: true;
+                text <=> root.search-text;
+                edited(t) => { root.search-changed(t); }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 6. Issues Table
+        // -------------------------------------------------------------------
+        if root.active-view-tab == 0: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 4px;
+
+            // Table Header
+            Rectangle {
+                height: 28px;
+                background: #000000;
+                border-radius: Theme.radius-sm;
+
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 12px;
+
+                    Text { text: "TRACK & ARTIST"; horizontal-stretch: 1; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "REASON & DISCREPANCY"; width: 260px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "STATUS"; width: 90px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "ACTIONS"; width: 110px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; horizontal-alignment: right; }
+                }
+            }
+
+            // List of issue tracks
+            ListView {
+                for issue[idx] in root.issues: Rectangle {
+                    height: 48px;
+                    border-radius: Theme.radius-sm;
+                    background: row_ta.has-hover ? #0E1118 : (Math.mod(idx, 2) == 1 ? #07080B : transparent);
+                    border-width: 1px;
+                    border-color: row_ta.has-hover ? Theme.stroke-soft : transparent;
+
+                    row_ta := TouchArea {}
+
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 12px;
+                        alignment: center;
+
+                        // Title & Artist
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 1px;
+                            Text {
+                                text: issue.title;
+                                color: Theme.text-primary;
+                                font-size: 13px;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: issue.artist + (issue.album != "" ? " • " + issue.album : "");
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                overflow: elide;
+                            }
+                        }
+
+                        // Reason Badge
+                        HorizontalLayout {
+                            width: 260px;
+                            alignment: start;
+                            Rectangle {
+                                height: 24px;
+                                border-radius: 12px;
+                                background: issue.category == "wrong_song" ? #2C0E14 :
+                                            issue.category == "offset" ? #281B09 :
+                                            issue.category == "too_short_long" ? #261A08 :
+                                            issue.category == "missing" ? #1E0F15 : #161A22;
+                                border-width: 1px;
+                                border-color: issue.category == "wrong_song" ? #E11D4860 :
+                                              issue.category == "offset" ? #F59E0B60 :
+                                              issue.category == "too_short_long" ? #D9770660 :
+                                              issue.category == "missing" ? #F43F5E60 : #3B82F660;
+
+                                HorizontalLayout {
+                                    padding-left: 10px; padding-right: 10px; alignment: center;
+                                    Text {
+                                        text: issue.reason;
+                                        color: issue.category == "wrong_song" ? #FDA4AF :
+                                               issue.category == "offset" ? #FDE68A :
+                                               issue.category == "too_short_long" ? #FCD34D :
+                                               issue.category == "missing" ? #FECDD3 : #93C5FD;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Status
+                        HorizontalLayout {
+                            width: 90px;
+                            alignment: start;
+                            StatusPill {
+                                status: issue.status;
+                            }
+                        }
+
+                        // Preview Diff Action
+                        HorizontalLayout {
+                            width: 110px;
+                            alignment: end;
+                            Rectangle {
+                                height: 28px;
+                                border-radius: Theme.radius-xs;
+                                background: btn_ta.has-hover ? #2D1D4A : #1C1230;
+                                border-width: 1px;
+                                border-color: Theme.accent-violet;
+                                btn_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.preview-single-issue(idx); }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 10px; padding-right: 10px; alignment: center;
+                                    Text {
+                                        text: issue.is-safe ? "Preview Fix" : "Inspect";
+                                        color: Theme.text-primary;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.issues.length == 0: Rectangle {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Text { text: "🎉"; font-size: 32px; horizontal-alignment: center; }
+                    Text { text: "No health issues found in this category!"; color: Theme.text-primary; font-size: 15px; font-weight: 700; horizontal-alignment: center; }
+                    Text { text: "Your library lyrics are synchronized and in great shape."; color: Theme.text-dim; font-size: 12px; horizontal-alignment: center; }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // 7. Result Log Table (Showing provider, score, why chosen)
+        // -------------------------------------------------------------------
+        if root.active-view-tab == 1: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 4px;
+
+            // Table Header
+            Rectangle {
+                height: 28px;
+                background: #000000;
+                border-radius: Theme.radius-sm;
+
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 12px;
+
+                    Text { text: "TRACK & ARTIST"; width: 220px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "PROVIDER"; width: 110px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "SCORE"; width: 70px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "SELECTION REASON / WHY CHOSEN"; horizontal-stretch: 1; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                    Text { text: "RESULT"; width: 130px; color: Theme.text-dim; font-size: 11px; font-weight: 700; vertical-alignment: center; horizontal-alignment: right; }
+                }
+            }
+
+            ListView {
+                for log[idx] in root.result-logs: Rectangle {
+                    height: 48px;
+                    border-radius: Theme.radius-sm;
+                    background: Math.mod(idx, 2) == 1 ? #07080B : transparent;
+
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 12px;
+                        alignment: center;
+
+                        // Title & Artist
+                        VerticalLayout {
+                            width: 220px;
+                            alignment: center;
+                            spacing: 1px;
+                            Text {
+                                text: log.title;
+                                color: Theme.text-primary;
+                                font-size: 13px;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: log.artist;
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                overflow: elide;
+                            }
+                        }
+
+                        // Provider Pill
+                        HorizontalLayout {
+                            width: 110px;
+                            alignment: start;
+                            Rectangle {
+                                height: 22px;
+                                border-radius: 11px;
+                                background: #121927;
+                                border-width: 1px;
+                                border-color: #2563EB50;
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px; alignment: center;
+                                    Text {
+                                        text: log.provider != "" ? log.provider : "None";
+                                        color: #93C5FD;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Score Pill
+                        HorizontalLayout {
+                            width: 70px;
+                            alignment: start;
+                            Rectangle {
+                                height: 22px;
+                                border-radius: 11px;
+                                background: #0B2418;
+                                border-width: 1px;
+                                border-color: #10B98150;
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px; alignment: center;
+                                    Text {
+                                        text: log.score-text != "" ? log.score-text : "--";
+                                        color: #34D399;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Why chosen / selection reason
+                        Text {
+                            horizontal-stretch: 1;
+                            text: log.selection-reason != "" ? log.selection-reason : "Standard search match";
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        // Status badge
+                        HorizontalLayout {
+                            width: 130px;
+                            alignment: end;
+                            Rectangle {
+                                height: 24px;
+                                border-radius: 12px;
+                                background: log.status-type == "synced" ? #061B12 :
+                                            log.status-type == "plain" ? #0A1424 :
+                                            log.status-type == "error" ? #280C14 : #161820;
+                                border-width: 1px;
+                                border-color: log.status-type == "synced" ? #10B981 :
+                                              log.status-type == "plain" ? #3B82F6 :
+                                              log.status-type == "error" ? #E11D48 : #4B5563;
+                                HorizontalLayout {
+                                    padding-left: 10px; padding-right: 10px; alignment: center;
+                                    Text {
+                                        text: log.status-text;
+                                        color: log.status-type == "synced" ? #34D399 :
+                                               log.status-type == "plain" ? #60A5FA :
+                                               log.status-type == "error" ? #FDA4AF : #9CA3AF;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.result-logs.length == 0: Rectangle {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Text { text: "📋"; font-size: 32px; horizontal-alignment: center; }
+                    Text { text: "No repair results logged yet."; color: Theme.text-primary; font-size: 15px; font-weight: 700; horizontal-alignment: center; }
+                    Text { text: "Run 'Fix All Safe Issues' to repair lyrics and view chosen providers and scores."; color: Theme.text-dim; font-size: 12px; horizontal-alignment: center; }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. One-Click "Fix All Safe Issues" Preview Diff Modal
+    // -----------------------------------------------------------------------
+    if root.preview-modal-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000D0;
+
+        // Block clicks through modal backdrop
+        TouchArea { width: 100%; height: 100%; }
+
+        modal_card := Rectangle {
+            width: min(840px, parent.width - 32px);
+            height: min(620px, parent.height - 32px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #07090E;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.accent-violet;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                // Modal Header
+                HorizontalLayout {
+                    height: 36px;
+                    alignment: space-between;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: center;
+                        Rectangle {
+                            width: 32px; height: 32px; border-radius: 16px;
+                            background: #251B3E; border-width: 1px; border-color: Theme.accent-violet;
+                            Text { text: "⚡"; font-size: 16px; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        VerticalLayout {
+                            alignment: center; spacing: 2px;
+                            Text { text: "Preview Safe Fixes (" + root.preview-items.length + " Tracks)"; color: Theme.text-primary; font-size: 16px; font-weight: 700; }
+                            Text { text: "Review proposed lyric diffs, chosen provider, and confidence score before writing changes"; color: Theme.text-dim; font-size: 11px; }
+                        }
+                    }
+
+                    IconButton {
+                        icon: @image-url("../assets/close.svg");
+                        icon-size: 14px;
+                        icon-color: Theme.text-muted;
+                        icon-hover-color: #FF4D6D;
+                        clicked => { root.cancel-preview(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.divider; }
+
+                // Content: Left Track List, Right Unified Diff Viewer
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: 12px;
+
+                    // Track selector list
+                    Rectangle {
+                        width: 260px;
+                        background: #0A0D14;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: Theme.stroke-soft;
+
+                        ListView {
+                            for item[i] in root.preview-items: Rectangle {
+                                height: 50px;
+                                border-radius: Theme.radius-xs;
+                                background: root.preview-selected-index == i ? #1E1735 : (item_ta.has-hover ? #121622 : transparent);
+                                border-width: 1px;
+                                border-color: root.preview-selected-index == i ? Theme.accent-violet : transparent;
+
+                                item_ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.preview-selected-index = i; root.select-preview-item(i); }
+                                }
+
+                                VerticalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    alignment: center;
+                                    spacing: 2px;
+
+                                    Text {
+                                        text: item.title;
+                                        color: root.preview-selected-index == i ? Theme.text-primary : #D1D5DB;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                    }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        Text { text: item.artist; color: Theme.text-dim; font-size: 10px; overflow: elide; }
+                                        Text { text: item.issue-category; color: Theme.accent-violet; font-size: 10px; font-weight: 600; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Selected Track Diff & Details
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: #030407;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: Theme.stroke-soft;
+
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 8px;
+
+                            // Details banner of selected track
+                            if root.preview-items.length > 0: HorizontalLayout {
+                                height: 32px;
+                                alignment: space-between;
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: center;
+                                    Text {
+                                        text: root.preview-items[root.preview-selected-index].title + " — " + root.preview-items[root.preview-selected-index].artist;
+                                        color: Theme.text-primary;
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: center;
+                                    Rectangle {
+                                        height: 22px; border-radius: 11px; background: #131E32; border-width: 1px; border-color: #3B82F650;
+                                        HorizontalLayout {
+                                            padding-left: 8px; padding-right: 8px;
+                                            Text { text: "Provider: " + root.preview-items[root.preview-selected-index].provider; color: #93C5FD; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                                        }
+                                    }
+                                    Rectangle {
+                                        height: 22px; border-radius: 11px; background: #0E2419; border-width: 1px; border-color: #10B98150;
+                                        HorizontalLayout {
+                                            padding-left: 8px; padding-right: 8px;
+                                            Text { text: "Score: " + root.preview-items[root.preview-selected-index].score-text; color: #34D399; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Selection reason
+                            if root.preview-items.length > 0: Text {
+                                text: "Why chosen: " + root.preview-items[root.preview-selected-index].selection-reason;
+                                color: Theme.accent-cyan;
+                                font-size: 11px;
+                                font-weight: 500;
+                            }
+
+                            // Diff text viewer
+                            Rectangle {
+                                vertical-stretch: 1;
+                                background: #000000;
+                                border-radius: Theme.radius-xs;
+                                border-width: 1px;
+                                border-color: #1A1F2C;
+
+                                ScrollView {
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        Text {
+                                            text: root.preview-items.length > 0 ? root.preview-items[root.preview-selected-index].diff-text : "No preview available";
+                                            color: #D1D5DB;
+                                            font-size: 12px;
+                                            font-family: "Cascadia Code, Consolas, Courier New, monospace";
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Modal Footer
+                Rectangle { height: 1px; background: Theme.divider; }
+
+                HorizontalLayout {
+                    height: 38px;
+                    alignment: space-between;
+
+                    // Backup checkbox toggle
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: center;
+                        Rectangle {
+                            width: 18px;
+                            height: 18px;
+                            border-radius: 4px;
+                            background: root.backup-enabled ? Theme.accent-violet : transparent;
+                            border-width: 1px;
+                            border-color: root.backup-enabled ? Theme.accent-violet : Theme.stroke-strong;
+                            chk_ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.backup-enabled = !root.backup-enabled;
+                                    root.toggle-backup(root.backup-enabled);
+                                }
+                            }
+                            if root.backup-enabled: Text {
+                                text: "✓";
+                                color: #FFFFFF;
+                                font-size: 12px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                        Text {
+                            text: "Create backup (.lrc.bak) before overwriting any existing lyrics file";
+                            color: Theme.text-primary;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Action buttons
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: center;
+
+                        Rectangle {
+                            height: 34px;
+                            background: #1A1E2A;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.stroke-soft;
+                            TouchArea { mouse-cursor: pointer; clicked => { root.cancel-preview(); } }
+                            HorizontalLayout { padding-left: 14px; padding-right: 14px; alignment: center; Text { text: "Cancel"; color: Theme.text-muted; font-size: 13px; font-weight: 600; vertical-alignment: center; } }
+                        }
+
+                        Rectangle {
+                            height: 34px;
+                            background: Theme.accent-violet;
+                            border-radius: Theme.radius-sm;
+                            TouchArea { mouse-cursor: pointer; clicked => { root.apply-fixes(); } }
+                            HorizontalLayout {
+                                padding-left: 16px; padding-right: 16px; spacing: 6px; alignment: center;
+                                Text { text: "⚡"; font-size: 13px; vertical-alignment: center; }
+                                Text { text: "Apply All Fixes (" + root.preview-items.length + ")"; color: #FFFFFF; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

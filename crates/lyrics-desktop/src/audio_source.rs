@@ -343,7 +343,11 @@ impl<S: Iterator<Item = i16>> Iterator for LevelCapture<S> {
             //
             // -40 dB (rms ≈ 0.01) → 0.0, -6 dB (rms ≈ 0.5) → ~0.85,
             // 0 dB (rms = 1.0) → 1.0.
-            let db = if rms > 1e-6 { 20.0 * rms.log10() } else { -60.0 };
+            let db = if rms > 1e-6 {
+                20.0 * rms.log10()
+            } else {
+                -60.0
+            };
             let visual = ((db + 40.0) / 40.0).clamp(0.0, 1.0);
             self.level.set(visual);
             self.sum_sq = 0.0;
