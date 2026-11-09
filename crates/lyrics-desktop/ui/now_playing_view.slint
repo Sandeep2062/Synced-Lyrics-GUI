@@ -168,6 +168,8 @@ export component NowPlayingView inherits Rectangle {
                 VerticalLayout {
                     spacing: 4px;
                     alignment: center;
+                    width: 100%;
+                    max-width: 380px;
 
                     Text {
                         text: root.has-track ? root.track-title : "No Track Selected";
@@ -176,6 +178,7 @@ export component NowPlayingView inherits Rectangle {
                         font-weight: 700;
                         horizontal-alignment: center;
                         overflow: elide;
+                        width: 100%;
                     }
 
                     Text {
@@ -186,6 +189,7 @@ export component NowPlayingView inherits Rectangle {
                         font-size: 13px;
                         horizontal-alignment: center;
                         overflow: elide;
+                        width: 100%;
                     }
                 }
 

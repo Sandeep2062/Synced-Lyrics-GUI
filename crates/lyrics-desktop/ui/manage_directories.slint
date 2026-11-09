@@ -18,7 +18,7 @@ export component ManageDirectoriesDialog inherits Rectangle {
     callback remove-directory(int);
     callback close();
 
-    background: #000000D9;
+    background: #000000F5;
 
     // Swallows every click that misses the card, so the window behind this
     // overlay cannot be operated while it is open.
@@ -113,6 +113,7 @@ export component ManageDirectoriesDialog inherits Rectangle {
 
                         Text {
                             horizontal-stretch: 1;
+                            min-width: 0px;
                             text: dir;
                             color: Theme.text-muted;
                             font-size: 12px;

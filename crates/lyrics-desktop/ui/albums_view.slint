@@ -267,7 +267,6 @@ export component AlbumsView inherits Rectangle {
             HorizontalLayout {
                 height: 122px;
                 spacing: 20px;
-                alignment: start;
 
                 CoverTile {
                     cover: root.selected-album-cover;
@@ -279,6 +278,7 @@ export component AlbumsView inherits Rectangle {
 
                 VerticalLayout {
                     horizontal-stretch: 1;
+                    min-width: 0px;
                     alignment: center;
                     spacing: 6px;
                     Text {
@@ -287,6 +287,7 @@ export component AlbumsView inherits Rectangle {
                         font-size: 24px;
                         font-weight: 800;
                         overflow: elide;
+                        min-width: 0px;
                     }
                     Text {
                         text: root.selected-album-index >= 0 ? root.albums[root.selected-album-index].artist : "";
@@ -294,11 +295,14 @@ export component AlbumsView inherits Rectangle {
                         font-size: 15px;
                         font-weight: 500;
                         overflow: elide;
+                        min-width: 0px;
                     }
                     Text {
                         text: root.album-tracks.length + " Tracks  •  Click any track to play";
                         color: Theme.text-dim;
                         font-size: 12px;
+                        overflow: elide;
+                        min-width: 0px;
                     }
                 }
             }

@@ -259,7 +259,6 @@ export component TracksView inherits Rectangle {
                         horizontal-stretch: 1;
                         vertical-stretch: 1;
                         spacing: 12px;
-                        alignment: start;
 
                         CoverTile {
                             cover: track.cover;
@@ -270,7 +269,9 @@ export component TracksView inherits Rectangle {
                         }
 
                         VerticalLayout {
+                            horizontal-stretch: 1;
                             vertical-stretch: 1;
+                            min-width: 0px;
                             alignment: center;
                             spacing: 3px;
                             Text {
@@ -279,6 +280,7 @@ export component TracksView inherits Rectangle {
                                 font-size: 14px;
                                 font-weight: 600;
                                 overflow: elide;
+                                min-width: 0px;
                                 animate color { duration: Theme.motion-fast; easing: ease-out; }
                             }
                             Text {
@@ -286,6 +288,7 @@ export component TracksView inherits Rectangle {
                                 color: Theme.text-muted;
                                 font-size: 12px;
                                 overflow: elide;
+                                min-width: 0px;
                             }
                         }
                     }

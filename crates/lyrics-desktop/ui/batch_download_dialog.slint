@@ -535,6 +535,7 @@ export component BatchDownloadDialog inherits Rectangle {
                 // Progress count and now-processing track
                 VerticalLayout {
                     horizontal-stretch: 1;
+                    min-width: 0px;
                     alignment: center;
                     spacing: 3px;
 
@@ -559,6 +560,7 @@ export component BatchDownloadDialog inherits Rectangle {
                         font-size: 11px;
                         font-weight: 500;
                         overflow: elide;
+                        min-width: 0px;
                     }
 
                     if root.is-running && root.live-status != "": Text {

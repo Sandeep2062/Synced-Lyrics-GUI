@@ -11,8 +11,13 @@
 //!
 //! Run with: `cargo test -p lyrics-desktop ui_snapshot -- --nocapture`
 
-use crate::ui_audit::{Frame, Island, Report, FAINT_LUMA};
-use crate::{AlbumData, ArtistData, LyricLine, MainWindow, TrackData};
+#![allow(dead_code)]
+
+use crate::ui_audit::{Frame, Island, Rect, Report, FAINT_LUMA};
+use crate::{
+    AlbumData, ArtistData, BatchLogEntry, BatchStats, DownloadStats, HealthResultLog,
+    HealthTrackRow, LogEntry, LyricLine, MainWindow, PreviewDiffItem, ProviderStatus, TrackData,
+};
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
 };
@@ -63,27 +68,34 @@ fn settle(ms: u64) {
 
 /// Renders the window, writes the PNG for human inspection, audits the frame for
 /// unthemed widgets, and hands the frame back for layout assertions.
-fn capture(name: &str, report: &mut Report) -> Frame {
+fn capture_sized(name: &str, width: u32, height: u32, report: &mut Report) -> Frame {
     let window = window();
+    window.set_size(slint::PhysicalSize::new(width, height));
+    window.dispatch_event(slint::platform::WindowEvent::Resized {
+        size: slint::LogicalSize::new(width as f32, height as f32),
+    });
+    window.request_redraw();
+    settle(300);
+    slint::platform::update_timers_and_animations();
     let opaque_black = PremultipliedRgbaColor {
         red: 0,
         green: 0,
         blue: 0,
         alpha: 255,
     };
-    let mut buffer = vec![opaque_black; (WIDTH * HEIGHT) as usize];
+    let mut buffer = vec![opaque_black; (width * height) as usize];
 
     slint::platform::update_timers_and_animations();
     let rendered = window.draw_if_needed(|renderer| {
-        renderer.render(&mut buffer, WIDTH as usize);
+        renderer.render(&mut buffer, width as usize);
     });
     assert!(rendered, "{name}: window had no dirty region to render");
 
-    let mut img = image::RgbaImage::new(WIDTH, HEIGHT);
+    let mut img = image::RgbaImage::new(width, height);
     for (i, px) in buffer.iter().enumerate() {
         img.put_pixel(
-            (i as u32) % WIDTH,
-            (i as u32) / WIDTH,
+            (i as u32) % width,
+            (i as u32) / width,
             image::Rgba([px.red, px.green, px.blue, 255]),
         );
     }
@@ -93,7 +105,7 @@ fn capture(name: &str, report: &mut Report) -> Frame {
     img.save(&path).expect("write snapshot");
     println!("wrote {}", path.display());
 
-    let frame = Frame::new(&buffer, WIDTH as usize, HEIGHT as usize);
+    let frame = Frame::new(&buffer, width as usize, height as usize);
 
     // Every screen, in every state, must be drawn with the app's own theme. A
     // large uniform light-grey region means a platform-themed widget (LineEdit,
@@ -117,113 +129,70 @@ fn capture(name: &str, report: &mut Report) -> Frame {
     frame
 }
 
-fn sample_tracks() -> Vec<TrackData> {
-    let rows: [(&str, &str, &str, &str, &str); 12] = [
+fn capture(name: &str, report: &mut Report) -> Frame {
+    capture_sized(name, WIDTH, HEIGHT, report)
+}
+
+fn worst_case_tracks(count: usize) -> Vec<TrackData> {
+    let templates: [(&str, &str, &str, &str, &str); 4] = [
         (
-            "WUZZUP (Prod. 808 Sensei)",
-            "2. youngsch",
-            "808 Sensei",
-            "3:12",
-            "missing",
-        ),
-        (
-            "(Do The) Act Like You Never Met Me",
-            "06. TV Girl",
-            "Who Really Cares",
-            "4:01",
+            // Exactly 90 chars: CJK + Emoji + Multilingual stress title
+            "🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789",
+            "Aimer (エメ) & International Symphony Orchestra featuring Koto & Sarangi Ensemble Multilingual 90",
+            "Zankyo Sanka / Asa ga Kuru Deluxe Extended Edition with 100 Remastered Bonus Tracks Worldwide 90",
+            "04:12",
             "synced",
         ),
         (
-            "[Li Peep TYPE BEAT] M.O.S",
-            "Unknown Artist",
-            "Unknown Album",
-            "2:48",
-            "missing",
-        ),
-        (
-            "(Nice Dream)",
-            "06. Radiohead",
-            "The Bends",
-            "3:53",
-            "synced",
-        ),
-        (
-            "40",
-            "08. Droppin So Pretty",
-            "Unknown Album",
-            "2:22",
-            "synced",
-        ),
-        (
-            "00101110 01100010 01100001",
-            "11. OmenXIII",
-            "Unknown Album",
-            "2:05",
+            // Exactly 90 chars: Devanagari + Emoji + Folk classical title
+            "ॐ नमो भगवते वासुदेवाय - रेशम फिरिरी आधुनिक नेपाली साङ्गीतिक सिर्जना 🎧🚀 90-Character Title 123456789",
+            "Narayan Gopal & Aruna Lama / Classical Nepali Folk Ensemble with Traditional Madal Instrument",
+            "Geeti Yatra: Golden Memories of Nepali Classic Music - Complete 50th Anniversary Edition",
+            "05:43",
             "plain",
         ),
         (
-            "01 Corrupted",
-            "Unknown Artist",
-            "Unknown Album",
-            "3:30",
+            // Exactly 90 chars: Classical European Long Movement
+            "Supercalifragilisticexpialidocious Ultra Symphonic Movement No. 9 in D Minor 90-Chars 1234",
+            "Ludwig van Beethoven conducted by Herbert von Karajan with Berlin Philharmonic Orchestra",
+            "Beethoven: The Complete 9 Symphonies & Missa Solemnis Legendary Collector's Box Set 1977",
+            "03:28",
+            "missing",
+        ),
+        (
+            // Exactly 90 chars: Japanese Pop / Light Novel Adaptation
+            "🎉💥💖 夜に駆ける (Racing into the Night) YOASOBI Full Novel Music Extended Adaptation 90-Chars 123",
+            "YOASOBI (Ayase & ikura) / Sony Music Entertainment Japan High-Resolution Audio Mastering",
+            "THE BOOK (Limited Complete Production Edition with Special Binder and Lyrics Illustration)",
+            "04:21",
             "suspicious",
         ),
-        (
-            "01 Easy for You",
-            "Unknown Artist",
-            "Unknown Album",
-            "2:55",
-            "synced",
-        ),
-        (
-            "01 Halloween",
-            "Unknown Artist",
-            "Unknown Album",
-            "2:41",
-            "synced",
-        ),
-        (
-            "01 I'm Used to That",
-            "Unknown Artist",
-            "Unknown Album",
-            "3:18",
-            "synced",
-        ),
-        (
-            "01 Koi no Uta (feat. Tsukasa Yuzaki)",
-            "Unknown Artist",
-            "Unknown Album",
-            "2:47",
-            "synced",
-        ),
-        (
-            "01 Vengeance",
-            "Unknown Artist",
-            "Unknown Album",
-            "2:36",
-            "synced",
-        ),
     ];
-    rows.iter()
-        .enumerate()
-        .map(|(idx, (title, artist, album, dur, status))| TrackData {
-            path: SharedString::from(format!("C:\\Music\\{artist} - {title}.mp3")),
-            artist: SharedString::from(*artist),
-            title: SharedString::from(*title),
-            album: SharedString::from(*album),
-            duration: SharedString::from(*dur),
-            status: SharedString::from(*status),
-            has_lyrics: *status != "missing",
-            // The first screenful carries artwork so the snapshots prove covers
-            // actually reach the list, and the rest stay as placeholders.
-            cover: if idx < COVERED_ROWS {
-                sample_cover()
-            } else {
-                slint::Image::default()
-            },
-            has_cover: idx < COVERED_ROWS,
+
+    (0..count)
+        .map(|idx| {
+            let (t_title, t_artist, t_album, t_dur, t_status) = templates[idx % templates.len()];
+            TrackData {
+                path: SharedString::from(format!("C:\\Music\\{idx:05} - {t_artist} - {t_title}.mp3")),
+                artist: SharedString::from(t_artist),
+                title: SharedString::from(t_title),
+                album: SharedString::from(t_album),
+                duration: SharedString::from(t_dur),
+                status: SharedString::from(t_status),
+                has_lyrics: t_status != "missing",
+                cover: if idx < COVERED_ROWS {
+                    sample_cover()
+                } else {
+                    slint::Image::default()
+                },
+                has_cover: idx < COVERED_ROWS,
+            }
         })
         .collect()
+}
+
+fn sample_tracks() -> Vec<TrackData> {
+    worst_case_tracks(12)
 }
 
 /// Colour of the stand-in artwork. Deliberately unlike any theme colour, so
@@ -247,85 +216,113 @@ fn sample_cover() -> slint::Image {
     slint::Image::from_rgba8(pixels)
 }
 
-fn sample_albums() -> Vec<AlbumData> {
-    const SEED: [(&str, &str, i32, i32); 24] = [
-        ("The Bends", "Radiohead", 12, 11),
-        ("Who Really Cares", "TV Girl", 10, 10),
-        ("Native", "OneRepublic", 12, 9),
-        ("In Rainbows", "Radiohead", 10, 10),
-        ("A Brief Inquiry", "The 1975", 15, 12),
-        ("Blonde", "Frank Ocean", 17, 4),
-        ("Kid A", "Radiohead", 10, 8),
-        ("French Exit", "TV Girl", 13, 13),
-        ("Dreamland", "Glass Animals", 16, 2),
-        ("Immunity", "Jon Hopkins", 8, 0),
-        ("Vessel", "Twenty One Pilots", 12, 5),
-        ("Currents", "Tame Impala", 13, 7),
-        ("Untrue", "Burial", 13, 1),
-        ("Circles", "Mac Miller", 12, 0),
-        ("Sawayama", "Rina Sawayama", 13, 6),
-        ("The Slow Rush", "Tame Impala", 12, 12),
-        ("Good Kid, M.A.A.D City", "Kendrick Lamar", 12, 12),
-        ("Igor", "Tyler, The Creator", 12, 3),
-        ("Malibu", "Anderson .Paak", 16, 9),
-        ("Awaken, My Love!", "Childish Gambino", 11, 11),
-        ("Melodrama", "Lorde", 11, 6),
-        ("SOS", "SZA", 23, 21),
-        ("An Evening with Silk Sonic", "Silk Sonic", 9, 4),
-        ("Cavalcade", "black midi", 9, 0),
+fn worst_case_albums() -> Vec<AlbumData> {
+    let seeds = [
+        (
+            "🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 Deluxe Extended 90-Char Long Album Title Name 1234567890",
+            "Aimer (エメ) & International Symphony Orchestra Multilingual 90",
+            16,
+            14,
+        ),
+        (
+            "ॐ रेशम फिरिरी: नेपाली परम्परागत लोकभाका तथा आधुनिक धुन सङ्ग्रह स्वर्ण जयन्ती 90",
+            "Narayan Gopal & Nepali Folk Ensemble with Traditional Madal Instrument",
+            12,
+            12,
+        ),
+        (
+            "Supercalifragilisticexpialidocious Ultra Symphonic Movement No. 9 in D Minor 90-Chars 1234",
+            "Ludwig van Beethoven / Herbert von Karajan Berlin Philharmonic",
+            24,
+            20,
+        ),
+        (
+            "THE BOOK: Complete Novel-to-Music Audio Production Edition with Lyrics Collection 90-Chars",
+            "YOASOBI (Ayase & ikura) / Sony Music Entertainment Japan Mastering",
+            10,
+            8,
+        ),
     ];
-    SEED.iter()
-        .enumerate()
-        .map(|(idx, (name, artist, count, synced))| AlbumData {
-            path: SharedString::from(format!("C:\\Music\\{artist}\\{name}\\01.mp3")),
-            name: SharedString::from(*name),
-            artist: SharedString::from(*artist),
-            track_count: *count,
-            synced_count: *synced,
-            cover: if idx < COVERED_ROWS {
-                sample_cover()
-            } else {
-                slint::Image::default()
-            },
-            has_cover: idx < COVERED_ROWS,
+
+    (0..24)
+        .map(|idx| {
+            let (name, artist, count, synced) = seeds[idx % seeds.len()];
+            AlbumData {
+                path: SharedString::from(format!("C:\\Music\\{artist}\\{name}\\01.mp3")),
+                name: SharedString::from(name),
+                artist: SharedString::from(artist),
+                track_count: count,
+                synced_count: synced,
+                cover: if idx < COVERED_ROWS {
+                    sample_cover()
+                } else {
+                    slint::Image::default()
+                },
+                has_cover: idx < COVERED_ROWS,
+            }
+        })
+        .collect()
+}
+
+fn sample_albums() -> Vec<AlbumData> {
+    worst_case_albums()
+}
+
+fn worst_case_artists() -> Vec<ArtistData> {
+    let seeds = [
+        (
+            "🎵🔥 Aimer (エメ) & International Symphony Orchestra Multilingual Artist Name 90-Chars 1234",
+            32,
+            4,
+            30,
+        ),
+        (
+            "ॐ नारायण गोपाल (Narayan Gopal) - स्वर सम्राट तथा आधुनिक नेपाली साङ्गीतिक स्रष्टा 90",
+            48,
+            6,
+            45,
+        ),
+        (
+            "Ludwig van Beethoven & The Legendary Berlin Philharmonic Orchestra Under Karajan 90-Chars",
+            120,
+            15,
+            110,
+        ),
+        (
+            "YOASOBI (Ayase & ikura) / Sony Music Entertainment High-Resolution Master Audio 90-Chars",
+            28,
+            3,
+            26,
+        ),
+    ];
+
+    (0..10)
+        .map(|idx| {
+            let (name, tracks, albums, synced) = seeds[idx % seeds.len()];
+            ArtistData {
+                name: SharedString::from(name),
+                track_count: tracks,
+                album_count: albums,
+                synced_count: synced,
+            }
         })
         .collect()
 }
 
 fn sample_artists() -> Vec<ArtistData> {
-    const SEED: [(&str, i32, i32, i32); 10] = [
-        ("Radiohead", 32, 3, 29),
-        ("TV Girl", 23, 2, 23),
-        ("Tame Impala", 25, 2, 19),
-        ("OneRepublic", 12, 1, 9),
-        ("The 1975", 15, 1, 12),
-        ("Frank Ocean", 17, 1, 4),
-        ("Glass Animals", 16, 1, 2),
-        ("OmenXIII", 41, 4, 0),
-        ("Burial", 13, 1, 1),
-        ("Mac Miller", 12, 1, 0),
-    ];
-    SEED.iter()
-        .map(|(name, tracks, albums, synced)| ArtistData {
-            name: SharedString::from(*name),
-            track_count: *tracks,
-            album_count: *albums,
-            synced_count: *synced,
-        })
-        .collect()
+    worst_case_artists()
 }
 
-fn sample_lyrics() -> Vec<LyricLine> {
+fn worst_case_lyrics() -> Vec<LyricLine> {
     [
-        "I know you're somewhere out there",
-        "Somewhere far away",
-        "I want you back, I want you back",
-        "My neighbors think I'm crazy",
-        "But they don't understand",
-        "You're all I had, you're all I had",
-        "At night when the stars light up my room",
-        "I sit by myself",
-        "Talking to the moon",
+        "🎵 [00:00] 誰が袖に咲く幻花 ただそこに咲く幻花 殘響散歌 鬼滅の刃 遊郭編 90-Chars Title Line 1234",
+        "ॐ [00:04] रेशम फिरिरी रेशम फिरिरी उडेर जाउँ कि डाँडामा भञ्ज्याङ रेशम फिरिरी आधुनिक नेपाली धुन",
+        "★ [00:08] Supercalifragilisticexpialidocious Ultra Long Wrapped Symphonic Verse Lyric Line 90",
+        "💖 [00:12] 沈むように溶けてゆくように 二人だけの空が広がる夜に 夜に駆ける YOASOBI Full Novel",
+        "🚀 [00:16] Active Line: Multilingual High-Stress Lyric Line with Emoji 🎵🔥✨ and Devanagari ॐ",
+        "🎶 [00:20] The rhythm flows through deep orchestral melodies and ancient Nepalese Sarangi songs",
+        "🌟 [00:24] Continuing into the next movement of the composition with extended harmonious chords",
+        "🔥 [00:28] Final cadence approaching with vibrant choral voices echoing across the stadium hall",
     ]
     .iter()
     .enumerate()
@@ -334,6 +331,146 @@ fn sample_lyrics() -> Vec<LyricLine> {
         text: SharedString::from(*text),
     })
     .collect()
+}
+
+fn sample_lyrics() -> Vec<LyricLine> {
+    worst_case_lyrics()
+}
+
+fn worst_case_health_issues() -> Vec<HealthTrackRow> {
+    vec![
+        HealthTrackRow {
+            path: SharedString::from("C:\\Music\\01.mp3"),
+            title: SharedString::from("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789"),
+            artist: SharedString::from("Aimer (エメ) & International Symphony Orchestra Multilingual 90"),
+            album: SharedString::from("Zankyo Sanka Deluxe Extended Edition with 100 Bonus Tracks 90"),
+            duration: SharedString::from("04:12"),
+            status: SharedString::from("suspicious"),
+            category: SharedString::from("wrong_song"),
+            category_label: SharedString::from("Wrong Song"),
+            reason: SharedString::from("Title mismatch: Tag '殘響散歌' vs LRCLib 'Zankyou Sanka' (Score 72)"),
+            is_safe: true,
+            suggested_offset_ms: 0,
+        },
+        HealthTrackRow {
+            path: SharedString::from("C:\\Music\\02.mp3"),
+            title: SharedString::from("ॐ नमो भगवते वासुदेवाय - रेशम फिरिरी आधुनिक नेपाली साङ्गीतिक सिर्जना 🎧🚀 90-Character Title 123456789"),
+            artist: SharedString::from("Narayan Gopal & Classical Nepali Folk Ensemble"),
+            album: SharedString::from("Geeti Yatra: Golden Memories Complete 50th Edition"),
+            duration: SharedString::from("05:43"),
+            status: SharedString::from("suspicious"),
+            category: SharedString::from("offset"),
+            category_label: SharedString::from("Offset Discrepancy"),
+            reason: SharedString::from("LRC timestamps lead audio by ~1450ms across first 8 lyric lines"),
+            is_safe: true,
+            suggested_offset_ms: 1450,
+        },
+    ]
+}
+
+fn worst_case_health_logs() -> Vec<HealthResultLog> {
+    vec![
+        HealthResultLog {
+            timestamp: SharedString::from("14:22:05"),
+            title: SharedString::from("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789"),
+            artist: SharedString::from("Aimer (エメ)"),
+            provider: SharedString::from("LRCLib"),
+            score_text: SharedString::from("98%"),
+            selection_reason: SharedString::from("Exact matched duration (04:12) with high-confidence synced timestamp coverage"),
+            status_text: SharedString::from("FIXED (SYNCED)"),
+            status_type: SharedString::from("synced"),
+        },
+        HealthResultLog {
+            timestamp: SharedString::from("14:22:08"),
+            title: SharedString::from("ॐ नमो भगवते वासुदेवाय - रेशम फिरिरी 🎧🚀 90-Character Multilingual Extreme Stress Test Title 123456789"),
+            artist: SharedString::from("Narayan Gopal"),
+            provider: SharedString::from("Musixmatch"),
+            score_text: SharedString::from("91%"),
+            selection_reason: SharedString::from("Verified audio fingerprint and matching verse structure"),
+            status_text: SharedString::from("FIXED (PLAIN)"),
+            status_type: SharedString::from("plain"),
+        },
+    ]
+}
+
+fn worst_case_diff_items() -> Vec<PreviewDiffItem> {
+    vec![
+        PreviewDiffItem {
+            path: SharedString::from("C:\\Music\\01.mp3"),
+            title: SharedString::from("🎵🔥 殘響散歌 / 鬼滅の刃 90-Character Multilingual Title 123456789"),
+            artist: SharedString::from("Aimer (エメ)"),
+            issue_category: SharedString::from("Wrong Song"),
+            action_label: SharedString::from("Replace with Verified Synced Lyrics"),
+            provider: SharedString::from("LRCLib (Score 98%)"),
+            score_text: SharedString::from("98%"),
+            selection_reason: SharedString::from("Exact duration and metadata alignment"),
+            diff_text: SharedString::from("--- Existing Lyrics (Mismatch)\n+++ Proposed Lyrics (LRCLib)\n@@ -1,5 +1,5 @@\n-[00:01.00] Wrong intro line\n+[00:01.20] 誰が袖に咲く幻花\n-[00:05.00] Incorrect chorus\n+[00:04.85] ただそこに咲く幻花\n"),
+        }
+    ]
+}
+
+fn worst_case_providers() -> Vec<ProviderStatus> {
+    vec![
+        ProviderStatus { name: SharedString::from("LRCLib"), status: SharedString::from("searching") },
+        ProviderStatus { name: SharedString::from("Musixmatch"), status: SharedString::from("found") },
+        ProviderStatus { name: SharedString::from("NetEase"), status: SharedString::from("searching") },
+        ProviderStatus { name: SharedString::from("Megalobiz"), status: SharedString::from("not-found") },
+        ProviderStatus { name: SharedString::from("Genius"), status: SharedString::from("rate-limited") },
+    ]
+}
+
+fn worst_case_download_logs() -> Vec<SharedString> {
+    vec![
+        SharedString::from("[14:22:01] 🎵 Starting batch download for 10,000 tracks across 3 directories..."),
+        SharedString::from("[14:22:03] ✓ LRCLib: Found synced lyrics for '🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 90-Character Multilingual Title'"),
+        SharedString::from("[14:22:06] ⚠ Megalobiz: 429 Too Many Requests — backoff initiated"),
+        SharedString::from("[14:22:09] ✓ Musixmatch: Token authenticated, downloaded lyrics for 'ॐ नमो भगवते वासुदेवाय'"),
+    ]
+}
+
+fn worst_case_logs_entries() -> Vec<LogEntry> {
+    vec![
+        LogEntry {
+            status: SharedString::from("Error"),
+            track_info: SharedString::from("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789"),
+            details: SharedString::from("Failed to retrieve lyrics from provider: RateLimit 429 on lrclib.net with 10 concurrent requests"),
+        },
+        LogEntry {
+            status: SharedString::from("Synced"),
+            track_info: SharedString::from("ॐ नमो भगवते वासुदेवाय - रेशम फिरिरी आधुनिक नेपाली साङ्गीतिक सिर्जना 🎧🚀 90-Character Title 123456789"),
+            details: SharedString::from("Successfully downloaded and embedded synchronized lyrics from Musixmatch API token"),
+        },
+    ]
+}
+
+fn worst_case_directories() -> Vec<SharedString> {
+    vec![
+        SharedString::from("C:\\Music\\🎵 Library\\日本語フォルダー\\नेपाली सङ्ग्रह\\Supercalifragilisticexpialidocious Ultra Long Directory Path 90"),
+        SharedString::from("D:\\Audio\\Lossless\\High-Resolution 24bit 192kHz FLAC Master Collection With Deeply Nested Subdirectories 90"),
+    ]
+}
+
+fn worst_case_batch_logs() -> Vec<BatchLogEntry> {
+    vec![
+        BatchLogEntry {
+            timestamp: SharedString::from("14:22:05"),
+            track_title: SharedString::from("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789"),
+            track_artist: SharedString::from("Aimer (エメ)"),
+            details: SharedString::from("✓ LRCLib (synced)  •  ✓ Musixmatch (synced)"),
+            action_text: SharedString::from("→ Saved synced lyrics from LRCLib"),
+            badge_text: SharedString::from("SYNCED"),
+            badge_type: SharedString::from("synced"),
+        },
+        BatchLogEntry {
+            timestamp: SharedString::from("14:22:07"),
+            track_title: SharedString::from("ॐ नमो भगवते वासुदेवाय - रेशम फिरिरी आधुनिक नेपाली साङ्गीतिक सिर्जना 🎧🚀 90-Character Title 123456789"),
+            track_artist: SharedString::from("Narayan Gopal"),
+            details: SharedString::from("✗ LRCLib  •  ✓ Genius (plain)"),
+            action_text: SharedString::from("→ Saved plain lyrics from Genius"),
+            badge_text: SharedString::from("PLAIN"),
+            badge_type: SharedString::from("plain"),
+        },
+    ]
 }
 
 /// Boots the headless platform, fills the window with sample data, and lets the
@@ -347,28 +484,26 @@ fn with_app(time_ms: u64, f: impl FnOnce(&MainWindow)) {
         .expect("set software-renderer platform");
 
     let ui = MainWindow::new().expect("create MainWindow");
-    ui.set_tracks(ModelRc::new(VecModel::from(sample_tracks())));
-    ui.set_albums(ModelRc::new(VecModel::from(sample_albums())));
+    ui.set_tracks(ModelRc::new(VecModel::from(worst_case_tracks(10_000))));
+    ui.set_albums(ModelRc::new(VecModel::from(worst_case_albums())));
     ui.set_album_rows(ModelRc::new(VecModel::from(crate::album_rows(
-        sample_albums().len(),
+        worst_case_albums().len(),
     ))));
-    ui.set_artists(ModelRc::new(VecModel::from(sample_artists())));
-    ui.set_tracks_summary("2059 tracks | 1208 synced | 198 plain | 653 missing".into());
+    ui.set_artists(ModelRc::new(VecModel::from(worst_case_artists())));
+    ui.set_tracks_summary("10000 tracks | 5000 synced | 2000 plain | 3000 missing".into());
     ui.set_app_version(env!("CARGO_PKG_VERSION").into());
-    ui.set_settings_music_dirs(ModelRc::new(VecModel::from(vec![
-        SharedString::from("C:\\Users\\Sandeep\\Music"),
-        SharedString::from("D:\\Library\\Lossless"),
-    ])));
+    ui.set_settings_music_dirs(ModelRc::new(VecModel::from(worst_case_directories())));
     ui.set_settings_musixmatch_key("9f3a1c77b204e5d8".into());
     ui.set_settings_enable_lrclib(true);
     ui.set_settings_enable_musixmatch(true);
     ui.set_settings_enable_netease(true);
     ui.set_settings_cache_period_idx(1);
-    ui.set_lyrics_lines(ModelRc::new(VecModel::from(sample_lyrics())));
+    ui.set_lyrics_lines(ModelRc::new(VecModel::from(worst_case_lyrics())));
     ui.set_active_line_index(4);
     ui.set_lyrics_status("synced".into());
-    ui.set_track_title("Counting Stars".into());
-    ui.set_track_subtitle("OneRepublic • Native".into());
+    ui.set_track_title("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789".into());
+    ui.set_track_subtitle("Aimer (エメ) & International Symphony Orchestra featuring Koto & Sarangi Ensemble Multilingual 90".into());
+    ui.set_track_album("Zankyo Sanka / Asa ga Kuru Deluxe Extended Edition with 100 Remastered Bonus Tracks Worldwide 90".into());
     ui.set_has_track(true);
     ui.set_has_lyrics(true);
     ui.set_is_playing(true);
@@ -384,306 +519,451 @@ fn with_app(time_ms: u64, f: impl FnOnce(&MainWindow)) {
 
     ui.show().expect("show window");
     window().set_size(slint::PhysicalSize::new(WIDTH, HEIGHT));
+    window().dispatch_event(slint::platform::WindowEvent::Resized {
+        size: slint::LogicalSize::new(WIDTH as f32, HEIGHT as f32),
+    });
     f(&ui);
 }
+
+fn audit_frame(frame: &Frame, name: &str, report: &mut Report) {
+    let w = frame.width();
+    let h = frame.height();
+
+    // 1. Unthemed platform widget leaks
+    if !name.contains("light") {
+        let blocks = frame.unthemed_blocks();
+        report.require(
+            blocks.is_empty(),
+            format!(
+                "[{name}] {} unthemed light block(s) — a platform-themed widget is bypassing the app theme: {}",
+                blocks.len(),
+                blocks
+                    .iter()
+                    .map(|block| block.to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        );
+    }
+
+    // 2. Window boundary safety (clipping without elide)
+    let window_rect = Rect::new(0, w, 0, h);
+    frame.check_not_clipped_at_boundary(window_rect, &format!("[{name}] window boundary"), report);
+
+    // 3. PlayerBar layout (when player bar is visible and full now-playing stage is not)
+    if !name.contains("mini") && !name.contains("now-playing") {
+        let player_top = h.saturating_sub(PLAYER_HEIGHT);
+        // Player bar left column (0..320) vs center transport
+        let left_col = Rect::new(0, 320, player_top, h);
+        let center_col = Rect::new(340, w.saturating_sub(300), player_top, h);
+        frame.check_regions_no_overlap(
+            left_col,
+            center_col,
+            10,
+            &format!("[{name}] PlayerBar left vs center transport"),
+            report,
+        );
+        // Center transport vs right actions
+        let right_col = Rect::new(w.saturating_sub(290), w, player_top, h);
+        frame.check_regions_no_overlap(
+            center_col,
+            right_col,
+            10,
+            &format!("[{name}] PlayerBar center vs right actions"),
+            report,
+        );
+    }
+
+    // 4. Header regions (when header tabs 0..4 are visible and not occluded by full modals)
+    if (name.starts_with("view-01")
+        || name.starts_with("view-02")
+        || name.starts_with("view-03")
+        || name.starts_with("view-04")
+        || name.starts_with("view-05"))
+        && !name.contains("now-playing")
+        && !name.contains("mini")
+        && !name.contains("directories")
+        && !name.contains("batch")
+    {
+        check_header_regions_no_overlap(frame, name, report);
+    }
+}
+
+const SIZES: [(u32, u32); 3] = [(960, 600), (1280, 820), (1920, 1080)];
 
 #[test]
 fn ui_snapshot() {
     let mut report = Report::default();
 
     with_app(5_000, |ui| {
-        let tracks = capture("01-tracks", &mut report);
-        check_header_tabs_centred(&tracks, &mut report);
-        check_tracks_columns_line_up(&tracks, &mut report);
-        check_player_bar_is_centred(&tracks, &mut report);
-        check_status_markers_are_centred(&tracks, &mut report);
-        check_header_action_icons_are_centred(&tracks, &mut report);
+        for &(width, height) in &SIZES {
+            let w = width as usize;
+            let h = height as usize;
 
-        ui.set_active_tab(1);
-        let albums = capture("02-albums", &mut report);
-        check_album_grid(&albums, &mut report);
-        check_cover_art_is_painted(&tracks, &mut report, "01-tracks", (30, 120, 150, 640));
-        check_cover_art_is_painted(&albums, &mut report, "02-albums", (40, 1240, 130, 680));
-        ui.set_active_tab(2);
-        capture("03-artists", &mut report);
-        ui.set_active_tab(3);
-        capture("03b-health", &mut report);
-        ui.set_active_tab(4);
-        capture("04-settings", &mut report);
-        ui.set_active_tab(0);
-        ui.set_lyrics_visible(true);
-        settle(600);
-        capture("05-tracks-lyrics-panel", &mut report);
+            // ---------------------------------------------------------------
+            // View 1: Tracks (10,000 tracks stress test & worst-case titles)
+            // ---------------------------------------------------------------
+            ui.set_active_tab(0);
+            ui.set_lyrics_visible(false);
+            ui.set_queue_visible(false);
+            ui.set_now_playing_visible(false);
+            ui.set_directories_open(false);
+            ui.set_batch_download_open(false);
+            ui.set_mini_player_mode(false);
+            ui.set_tracks(ModelRc::new(VecModel::from(worst_case_tracks(10_000))));
+            ui.set_tracks_summary("10000 tracks | 5000 synced | 2000 plain | 3000 missing".into());
+            let name_tracks = format!("view-01-tracks-{width}");
+            let f_tracks = capture_sized(&name_tracks, width, height, &mut report);
+            audit_frame(&f_tracks, &name_tracks, &mut report);
+            if width == 1280 {
+                check_tracks_columns_line_up(&f_tracks, &mut report);
+                check_player_bar_is_centred(&f_tracks, &mut report);
+                check_status_markers_are_centred(&f_tracks, &mut report);
+                check_header_action_icons_are_centred(&f_tracks, &mut report);
+            }
+            // Check that row title column does not overlap status column
+            let row_y0 = 140;
+            let row_y1 = 200.min(h - PLAYER_HEIGHT);
+            let col1 = Rect::new(0, w - 310, row_y0, row_y1);
+            let col2 = Rect::new(w - 305, w - 180, row_y0, row_y1);
+            f_tracks.check_regions_no_overlap(col1, col2, 4, &format!("[{name_tracks}] tracks title vs status column"), &mut report);
 
-        // Auto-scroll: the active lyric line must stay centred as playback moves.
-        ui.set_active_line_index(0);
-        settle(600);
-        capture("06-lyrics-first-line", &mut report);
-        ui.set_active_line_index(8);
-        settle(600);
-        capture("07-lyrics-last-line", &mut report);
+            // View 1b: Tracks Empty
+            ui.set_tracks(ModelRc::new(VecModel::from(Vec::<TrackData>::new())));
+            ui.set_tracks_summary(SharedString::new());
+            let name_tracks_empty = format!("view-01b-tracks-empty-{width}");
+            let f_tracks_empty = capture_sized(&name_tracks_empty, width, height, &mut report);
+            audit_frame(&f_tracks_empty, &name_tracks_empty, &mut report);
+            let empty_y0 = 260;
+            let empty_y1 = h.saturating_sub(100);
+            check_region_centred(&f_tracks_empty, &mut report, &name_tracks_empty, 0, w, empty_y0, empty_y1);
+            // Restore 10k tracks
+            ui.set_tracks(ModelRc::new(VecModel::from(worst_case_tracks(10_000))));
+            ui.set_tracks_summary("10000 tracks | 5000 synced | 2000 plain | 3000 missing".into());
 
-        // Enough lines to overflow the panel: the active line must be scrolled
-        // to the middle rather than stuck where the list happens to start.
-        ui.set_lyrics_lines(ModelRc::new(VecModel::from(
-            (0..30)
-                .map(|i| LyricLine {
-                    timestamp: i as f32 * 4.0,
-                    text: SharedString::from(format!("Line {i} of the lyrics")),
-                })
-                .collect::<Vec<_>>(),
-        )));
-        ui.set_active_line_index(20);
-        settle(600);
-        let scrolled = capture("08-lyrics-scrolled", &mut report);
-        check_lyrics_auto_scrolls(&scrolled, &mut report);
+            // ---------------------------------------------------------------
+            // View 2: Albums (worst-case titles & CJK/Devanagari)
+            // ---------------------------------------------------------------
+            ui.set_active_tab(1);
+            ui.set_album_detail_mode(false);
+            ui.set_albums(ModelRc::new(VecModel::from(worst_case_albums())));
+            ui.set_album_rows(ModelRc::new(VecModel::from(crate::album_rows(24))));
+            let name_albums = format!("view-02-albums-{width}");
+            let f_albums = capture_sized(&name_albums, width, height, &mut report);
+            audit_frame(&f_albums, &name_albums, &mut report);
+            if width == 1280 {
+                check_album_grid(&f_albums, &mut report);
+            }
 
-        // Real lyrics wrap. The active line has to make room for the second
-        // line instead of clipping it away.
-        ui.set_lyrics_lines(ModelRc::new(VecModel::from(vec![
-            LyricLine {
-                timestamp: 0.0,
-                text: SharedString::from("A short line"),
-            },
-            LyricLine {
-                timestamp: 4.0,
-                text: SharedString::from(
-                    "Okay, yeah I hit that, shawty, get back and never look at it again",
-                ),
-            },
-            LyricLine {
-                timestamp: 8.0,
-                text: SharedString::from("Another short line"),
-            },
-        ])));
-        ui.set_active_line_index(1);
-        settle(600);
-        let wrapped = capture("08b-lyrics-wrapped", &mut report);
-        check_active_line_is_not_clipped(&wrapped, &mut report);
-        ui.set_lyrics_lines(ModelRc::new(VecModel::from(sample_lyrics())));
-        ui.set_active_line_index(4);
-        settle(400);
+            // View 2b: Albums Empty
+            ui.set_albums(ModelRc::new(VecModel::from(Vec::<AlbumData>::new())));
+            ui.set_album_rows(ModelRc::new(VecModel::from(Vec::<i32>::new())));
+            let name_albums_empty = format!("view-02b-albums-empty-{width}");
+            let f_albums_empty = capture_sized(&name_albums_empty, width, height, &mut report);
+            audit_frame(&f_albums_empty, &name_albums_empty, &mut report);
+            let empty_y0 = 260;
+            let empty_y1 = h.saturating_sub(100);
+            check_region_centred(&f_albums_empty, &mut report, &name_albums_empty, 0, w, empty_y0, empty_y1);
+            ui.set_albums(ModelRc::new(VecModel::from(worst_case_albums())));
+            ui.set_album_rows(ModelRc::new(VecModel::from(crate::album_rows(24))));
 
-        // Album drill-down is a separate branch from the album grid.
-        ui.set_lyrics_visible(false);
-        ui.set_active_tab(1);
-        ui.set_album_detail_mode(true);
-        ui.set_selected_album_index(0);
-        ui.set_album_tracks(ModelRc::new(VecModel::from(sample_tracks())));
-        settle(500);
-        let album_detail = capture("09-albums-detail", &mut report);
-        check_cover_art_is_painted(
-            &album_detail,
-            &mut report,
-            "09-albums-detail",
-            (30, 120, 250, 700),
-        );
+            // View 2c: Albums Detail
+            ui.set_album_detail_mode(true);
+            ui.set_selected_album_index(0);
+            ui.set_album_tracks(ModelRc::new(VecModel::from(worst_case_tracks(12))));
+            let name_album_detail = format!("view-02c-albums-detail-{width}");
+            let f_album_detail = capture_sized(&name_album_detail, width, height, &mut report);
+            audit_frame(&f_album_detail, &name_album_detail, &mut report);
+            ui.set_album_detail_mode(false);
 
-        // A selected artist renders the detail header plus its track list.
-        ui.set_album_detail_mode(false);
-        ui.set_active_tab(2);
-        ui.set_selected_artist_index(0);
-        ui.set_artist_tracks(ModelRc::new(VecModel::from(sample_tracks())));
-        settle(500);
-        capture("10-artist-detail", &mut report);
+            // ---------------------------------------------------------------
+            // View 3: Artists (worst-case names & multilingual text)
+            // ---------------------------------------------------------------
+            ui.set_active_tab(2);
+            ui.set_selected_artist_index(0);
+            ui.set_artists(ModelRc::new(VecModel::from(worst_case_artists())));
+            ui.set_artist_tracks(ModelRc::new(VecModel::from(worst_case_tracks(12))));
+            let name_artists = format!("view-03-artists-{width}");
+            let f_artists = capture_sized(&name_artists, width, height, &mut report);
+            audit_frame(&f_artists, &name_artists, &mut report);
 
-        // Empty library: every view must fall back to a real empty state.
-        ui.set_selected_artist_index(-1);
-        ui.set_tracks(ModelRc::new(VecModel::from(Vec::<TrackData>::new())));
-        ui.set_albums(ModelRc::new(VecModel::from(Vec::<AlbumData>::new())));
-        ui.set_album_rows(ModelRc::new(VecModel::from(Vec::<i32>::new())));
-        ui.set_artists(ModelRc::new(VecModel::from(Vec::<ArtistData>::new())));
-        ui.set_tracks_summary(SharedString::new());
-        ui.set_active_tab(0);
-        settle(400);
-        let empty = capture("11-empty-tracks", &mut report);
-        check_region_centred(&empty, &mut report, "11-empty-tracks", 0, W, 250, 520);
+            // View 3b: Artists Empty
+            ui.set_selected_artist_index(-1);
+            ui.set_artists(ModelRc::new(VecModel::from(Vec::<ArtistData>::new())));
+            ui.set_artist_tracks(ModelRc::new(VecModel::from(Vec::<TrackData>::new())));
+            let name_artists_empty = format!("view-03b-artists-empty-{width}");
+            let f_artists_empty = capture_sized(&name_artists_empty, width, height, &mut report);
+            audit_frame(&f_artists_empty, &name_artists_empty, &mut report);
+            ui.set_artists(ModelRc::new(VecModel::from(worst_case_artists())));
+            ui.set_selected_artist_index(0);
+            ui.set_artist_tracks(ModelRc::new(VecModel::from(worst_case_tracks(12))));
 
-        // Filters active but nothing matches: the other empty state, with its
-        // "Clear filters" affordance.
-        ui.set_search_text("no such track".into());
-        settle(400);
-        let filtered = capture("11b-empty-filtered", &mut report);
-        // Guards the `x: (parent.width - self.width) / 2` centring of the button.
-        check_region_centred(&filtered, &mut report, "11b-empty-filtered", 0, W, 482, 545);
-        ui.set_search_text(SharedString::new());
+            // ---------------------------------------------------------------
+            // View 4: Health (Issues tab, Result Log tab, Diff Modal, Empty)
+            // ---------------------------------------------------------------
+            ui.set_active_tab(3);
+            ui.set_health_active_view_tab(0);
+            ui.set_health_total_count(10000);
+            ui.set_health_synced_count(5000);
+            ui.set_health_missing_count(3000);
+            ui.set_health_suspicious_count(450);
+            ui.set_health_plain_count(2000);
+            ui.set_health_safe_issues_count(345);
+            ui.set_health_issues(ModelRc::new(VecModel::from(worst_case_health_issues())));
+            let name_health_issues = format!("view-04-health-issues-{width}");
+            let f_health_issues = capture_sized(&name_health_issues, width, height, &mut report);
+            audit_frame(&f_health_issues, &name_health_issues, &mut report);
 
-        ui.set_active_tab(1);
-        settle(400);
-        let no_albums = capture("12-empty-albums", &mut report);
-        check_region_centred(&no_albums, &mut report, "12-empty-albums", 0, W, 250, 520);
+            // View 4b: Health Result Logs
+            ui.set_health_active_view_tab(1);
+            ui.set_health_result_logs(ModelRc::new(VecModel::from(worst_case_health_logs())));
+            let name_health_logs = format!("view-04b-health-logs-{width}");
+            let f_health_logs = capture_sized(&name_health_logs, width, height, &mut report);
+            audit_frame(&f_health_logs, &name_health_logs, &mut report);
+            ui.set_health_active_view_tab(0);
 
-        ui.set_active_tab(2);
-        settle(400);
-        let no_artists = capture("13-empty-artists", &mut report);
-        // The artists empty state lives in the 340px list panel, not the window.
-        check_region_centred(
-            &no_artists,
-            &mut report,
-            "13-empty-artists",
-            16,
-            356,
-            250,
-            520,
-        );
-        ui.set_active_tab(0);
-        ui.set_tracks(ModelRc::new(VecModel::from(sample_tracks())));
-        ui.set_albums(ModelRc::new(VecModel::from(sample_albums())));
-        ui.set_album_rows(ModelRc::new(VecModel::from(crate::album_rows(
-            sample_albums().len(),
-        ))));
-        ui.set_artists(ModelRc::new(VecModel::from(sample_artists())));
-        ui.set_tracks_summary("2059 tracks | 1208 synced | 198 plain | 653 missing".into());
+            // View 4c: Health Diff Preview Modal
+            ui.set_health_preview_modal_open(true);
+            ui.set_health_preview_items(ModelRc::new(VecModel::from(worst_case_diff_items())));
+            ui.set_health_preview_selected_index(0);
+            let name_health_diff = format!("view-04c-health-diff-{width}");
+            let f_health_diff = capture_sized(&name_health_diff, width, height, &mut report);
+            audit_frame(&f_health_diff, &name_health_diff, &mut report);
+            let modal_w = 840.min(w - 32);
+            let modal_x0 = (w - modal_w) / 2;
+            let modal_x1 = modal_x0 + modal_w;
+            let view_h = h.saturating_sub(HEADER_HEIGHT + PLAYER_HEIGHT);
+            let modal_h = 620.min(view_h.saturating_sub(32));
+            let modal_y0 = HEADER_HEIGHT + (view_h.saturating_sub(modal_h)) / 2;
+            let modal_y1 = modal_y0 + modal_h;
+            f_health_diff.check_text_outside_container(Rect::new(modal_x0, modal_x1, modal_y0, modal_y1), 20, &format!("[{name_health_diff}] health diff modal bounds"), &mut report);
+            ui.set_health_preview_modal_open(false);
 
-        // Plain (unsynced) lyrics: the panel swaps the line list for plain text.
-        ui.set_lyrics_status("plain".into());
-        ui.set_lyrics_lines(ModelRc::new(VecModel::from(Vec::<LyricLine>::new())));
-        ui.set_lyrics_plain_text(
-            "I know you're somewhere out there\nSomewhere far away\nI want you back, I want you back\n\nMy neighbors think I'm crazy\nBut they don't understand"
-                .into(),
-        );
-        ui.set_lyrics_visible(true);
-        settle(600);
-        capture("15-lyrics-plain", &mut report);
+            // View 4d: Health Empty
+            ui.set_health_issues(ModelRc::new(VecModel::from(Vec::<HealthTrackRow>::new())));
+            let name_health_empty = format!("view-04d-health-empty-{width}");
+            let f_health_empty = capture_sized(&name_health_empty, width, height, &mut report);
+            audit_frame(&f_health_empty, &name_health_empty, &mut report);
+            ui.set_health_issues(ModelRc::new(VecModel::from(worst_case_health_issues())));
 
-        // The directory picker: a modal overlay, and the only screen a first run
-        // can reach until a folder has been added.
-        ui.set_directories_open(true);
-        settle(500);
-        let directories = capture("16-directories", &mut report);
-        check_directories_dialog(&directories, &mut report);
-        ui.set_directories_open(false);
-        settle(300);
+            // ---------------------------------------------------------------
+            // View 5: Settings
+            // ---------------------------------------------------------------
+            ui.set_active_tab(4);
+            let name_settings = format!("view-05-settings-{width}");
+            let f_settings = capture_sized(&name_settings, width, height, &mut report);
+            audit_frame(&f_settings, &name_settings, &mut report);
 
-        // Batch download modal Stage 0 & Stage 1
-        ui.set_batch_download_open(true);
-        ui.set_batch_download_stage(0);
-        ui.set_batch_total_count(2059);
-        ui.set_batch_missing_count(653);
-        ui.set_batch_plain_count(198);
-        ui.set_batch_suspicious_count(12);
-        settle(500);
-        capture("17-batch-stage0", &mut report);
+            // ---------------------------------------------------------------
+            // View 6: Downloads
+            // ---------------------------------------------------------------
+            ui.set_active_tab(5);
+            ui.set_downloads_progress(0.65);
+            ui.set_downloads_progress_text("6500 / 10000 (65%)".into());
+            ui.set_downloads_eta_text("ETA: 08:32".into());
+            ui.set_downloads_current_track("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789".into());
+            ui.set_downloads_providers(ModelRc::new(VecModel::from(worst_case_providers())));
+            ui.set_downloads_logs(ModelRc::new(VecModel::from(worst_case_download_logs())));
+            ui.set_downloads_stats(DownloadStats {
+                synced: 5000,
+                plain: 1200,
+                kept: 300,
+                not_found: 10,
+                errors: 5,
+            });
+            ui.set_downloads_is_active(true);
+            let name_downloads = format!("view-06-downloads-{width}");
+            let f_downloads = capture_sized(&name_downloads, width, height, &mut report);
+            audit_frame(&f_downloads, &name_downloads, &mut report);
 
-        ui.set_batch_download_stage(1);
-        ui.set_batch_mode_title("Download Only for Missing".into());
-        ui.set_batch_phase_text("Downloading track 45 of 653...".into());
-        ui.set_batch_current_track("Adele — Hello".into());
-        ui.set_batch_progress(0.45);
-        ui.set_batch_progress_text("45 / 653 (45%)".into());
-        ui.set_batch_stats(crate::BatchStats {
-            total: 653,
-            processed: 45,
-            remaining: 608,
-            synced: 38,
-            plain: 4,
-            not_found: 2,
-            errors: 1,
-        });
-        ui.set_batch_is_running(true);
-        let sample_logs = vec![
-            crate::BatchLogEntry {
-                timestamp: "14:22:05".into(),
-                track_title: "Hello".into(),
-                track_artist: "Adele".into(),
-                details: "✓ LRCLib (synced)  •  ✓ Musixmatch (synced)".into(),
-                action_text: "→ Saved synced lyrics from LRCLib".into(),
-                badge_text: "SYNCED".into(),
-                badge_type: "synced".into(),
-            },
-            crate::BatchLogEntry {
-                timestamp: "14:22:07".into(),
-                track_title: "Counting Stars".into(),
-                track_artist: "OneRepublic".into(),
-                details: "✗ LRCLib  •  ✓ Genius (plain)".into(),
-                action_text: "→ Saved plain lyrics from Genius".into(),
-                badge_text: "PLAIN".into(),
-                badge_type: "plain".into(),
-            },
-            crate::BatchLogEntry {
-                timestamp: "14:22:09".into(),
-                track_title: "Unknown Intro".into(),
-                track_artist: "Unknown Artist".into(),
-                details: "✗ LRCLib  •  ✗ Musixmatch  •  ✗ NetEase  •  ✗ Megalobiz  •  ✗ Genius"
-                    .into(),
-                action_text: "→ No matching lyrics found".into(),
-                badge_text: "NOT FOUND".into(),
-                badge_type: "missing".into(),
-            },
-            crate::BatchLogEntry {
-                timestamp: "14:22:11".into(),
-                track_title: "Rescan Complete".into(),
-                track_artist: "Library".into(),
-                details: "Discovered 2,059 audio tracks across 2 folders".into(),
-                action_text: "".into(),
-                badge_text: "SCAN".into(),
-                badge_type: "scan".into(),
-            },
-        ];
-        ui.set_batch_logs(ModelRc::new(VecModel::from(sample_logs)));
-        settle(500);
-        capture("18-batch-stage1", &mut report);
-        ui.set_batch_download_open(false);
-        settle(300);
+            // View 6b: Downloads Empty
+            ui.set_downloads_logs(ModelRc::new(VecModel::from(Vec::<SharedString>::new())));
+            ui.set_downloads_is_active(false);
+            ui.set_downloads_current_track(SharedString::new());
+            let name_downloads_empty = format!("view-06b-downloads-empty-{width}");
+            let f_downloads_empty = capture_sized(&name_downloads_empty, width, height, &mut report);
+            audit_frame(&f_downloads_empty, &name_downloads_empty, &mut report);
+            ui.set_downloads_logs(ModelRc::new(VecModel::from(worst_case_download_logs())));
 
-        // No lyrics at all: the panel's fetch prompt is the third panel branch.
-        ui.set_lyrics_status("missing".into());
-        ui.set_lyrics_plain_text(SharedString::new());
-        settle(600);
-        let no_lyrics = capture("14-lyrics-none", &mut report);
-        // The panel is a 390px slide-over pinned to the right edge.
-        check_region_centred(
-            &no_lyrics,
-            &mut report,
-            "14-lyrics-none",
-            W - 390,
-            W,
-            200,
-            560,
-        );
+            // ---------------------------------------------------------------
+            // View 7: Logs
+            // ---------------------------------------------------------------
+            ui.set_active_tab(6);
+            ui.set_logs_total_count(10000);
+            ui.set_logs_missing_count(3000);
+            ui.set_logs_suspicious_count(450);
+            ui.set_logs_synced_count(5000);
+            ui.set_logs_entries(ModelRc::new(VecModel::from(worst_case_logs_entries())));
+            let name_logs = format!("view-07-logs-{width}");
+            let f_logs = capture_sized(&name_logs, width, height, &mut report);
+            audit_frame(&f_logs, &name_logs, &mut report);
 
-        // -------------------------------------------------------------------
-        // Redesigned Player & Lyrics Extensions
-        // -------------------------------------------------------------------
-        // Full Now-Playing Stage with large cover art & synced lyrics
-        ui.set_lyrics_visible(false);
-        ui.set_lyrics_status("synced".into());
-        ui.set_lyrics_lines(ModelRc::new(VecModel::from(sample_lyrics())));
-        ui.set_active_line_index(2);
-        ui.set_track_cover(sample_cover());
-        ui.set_has_cover(true);
-        ui.set_now_playing_visible(true);
-        settle(500);
-        let now_playing = capture("19-now-playing-full", &mut report);
-        check_cover_art_is_painted(
-            &now_playing,
-            &mut report,
-            "19-now-playing-full",
-            (40, 450, 100, 500),
-        );
-        ui.set_now_playing_visible(false);
-        settle(300);
+            // View 7b: Logs Empty
+            ui.set_logs_entries(ModelRc::new(VecModel::from(Vec::<LogEntry>::new())));
+            let name_logs_empty = format!("view-07b-logs-empty-{width}");
+            let f_logs_empty = capture_sized(&name_logs_empty, width, height, &mut report);
+            audit_frame(&f_logs_empty, &name_logs_empty, &mut report);
+            ui.set_logs_entries(ModelRc::new(VecModel::from(worst_case_logs_entries())));
 
-        // Queue / Next-Up Drawer
-        ui.set_queue_visible(true);
-        settle(500);
-        capture("20-queue-drawer", &mut report);
-        ui.set_queue_visible(false);
-        settle(300);
+            // ---------------------------------------------------------------
+            // View 8: Now Playing Fullscreen Stage Overlay
+            // ---------------------------------------------------------------
+            ui.set_active_tab(0);
+            ui.set_now_playing_visible(true);
+            let name_now_playing = format!("view-08-now-playing-{width}");
+            let f_now_playing = capture_sized(&name_now_playing, width, height, &mut report);
+            audit_frame(&f_now_playing, &name_now_playing, &mut report);
+            // Left column (28..408) vs right lyrics column (430..w-28)
+            let left_np = Rect::new(28, 408, 60, h.saturating_sub(30));
+            let lyrics_np = Rect::new(430, w.saturating_sub(28), 60, h.saturating_sub(30));
+            f_now_playing.check_regions_no_overlap(left_np, lyrics_np, 10, &format!("[{name_now_playing}] now-playing left vs lyrics"), &mut report);
+            ui.set_now_playing_visible(false);
 
-        // Mini-Player mode floating overlay
-        ui.set_mini_player_mode(true);
-        settle(500);
-        capture("21-mini-player", &mut report);
-        ui.set_mini_player_mode(false);
-        settle(300);
+            // ---------------------------------------------------------------
+            // View 9: Queue Drawer
+            // ---------------------------------------------------------------
+            ui.set_queue_visible(true);
+            ui.set_queue_tracks(ModelRc::new(VecModel::from(worst_case_tracks(12))));
+            ui.set_current_queue_index(0);
+            let name_queue = format!("view-09-queue-drawer-{width}");
+            let f_queue = capture_sized(&name_queue, width, height, &mut report);
+            audit_frame(&f_queue, &name_queue, &mut report);
+            let queue_rect = Rect::new(w.saturating_sub(340), w, 0, h);
+            f_queue.check_not_clipped_at_boundary(queue_rect, &format!("[{name_queue}] queue drawer right boundary"), &mut report);
+            let q_item_y0 = 150;
+            let q_item_y1 = 200;
+            let q_title_rect = Rect::new(w.saturating_sub(340) + 50, w.saturating_sub(70), q_item_y0, q_item_y1);
+            let q_dur_rect = Rect::new(w.saturating_sub(60), w.saturating_sub(10), q_item_y0, q_item_y1);
+            f_queue.check_regions_no_overlap(q_title_rect, q_dur_rect, 4, &format!("[{name_queue}] queue item title vs duration"), &mut report);
 
-        // Light theme snapshot
-        ui.set_is_dark(false);
-        settle(500);
-        capture("22-light-theme", &mut report);
-        ui.set_is_dark(true);
-        settle(300);
+            // View 9b: Queue Drawer Empty
+            ui.set_queue_tracks(ModelRc::new(VecModel::from(Vec::<TrackData>::new())));
+            let name_queue_empty = format!("view-09b-queue-empty-{width}");
+            let f_queue_empty = capture_sized(&name_queue_empty, width, height, &mut report);
+            audit_frame(&f_queue_empty, &name_queue_empty, &mut report);
+            ui.set_queue_visible(false);
+
+            // ---------------------------------------------------------------
+            // View 10: Lyrics Drawers (Synced, Plain, None, Suggest, Suspicious)
+            // ---------------------------------------------------------------
+            ui.set_lyrics_visible(true);
+            ui.set_lyrics_status("synced".into());
+            ui.set_lyrics_lines(ModelRc::new(VecModel::from(worst_case_lyrics())));
+            ui.set_active_line_index(4);
+            let name_lyrics_synced = format!("view-10-lyrics-synced-{width}");
+            let f_lyrics_synced = capture_sized(&name_lyrics_synced, width, height, &mut report);
+            audit_frame(&f_lyrics_synced, &name_lyrics_synced, &mut report);
+            let lyrics_rect = Rect::new(w.saturating_sub(390), w, 0, h);
+            f_lyrics_synced.check_not_clipped_at_boundary(lyrics_rect, &format!("[{name_lyrics_synced}] lyrics panel right boundary"), &mut report);
+
+            // View 10b: Lyrics Plain Text
+            ui.set_lyrics_status("plain".into());
+            ui.set_lyrics_lines(ModelRc::new(VecModel::from(Vec::<LyricLine>::new())));
+            ui.set_lyrics_plain_text("🎵 誰が袖に咲く幻花 ただそこに咲く幻花 殘響散歌\nॐ रेशम फिरिरी रेशम फिरिरी उडेर जाउँ कि डाँडामा भञ्ज्याङ\nSupercalifragilisticexpialidocious Ultra Long Wrapped Plain Lyric Text That Must Not Clip\n沈むように溶けてゆくように 二人だけの空が広がる夜に".into());
+            let name_lyrics_plain = format!("view-10b-lyrics-plain-{width}");
+            let f_lyrics_plain = capture_sized(&name_lyrics_plain, width, height, &mut report);
+            audit_frame(&f_lyrics_plain, &name_lyrics_plain, &mut report);
+
+            // View 10c: Lyrics None
+            ui.set_lyrics_status("missing".into());
+            ui.set_lyrics_plain_text(SharedString::new());
+            let name_lyrics_none = format!("view-10c-lyrics-none-{width}");
+            let f_lyrics_none = capture_sized(&name_lyrics_none, width, height, &mut report);
+            audit_frame(&f_lyrics_none, &name_lyrics_none, &mut report);
+
+            // View 10d: Lyrics Identification Suggestion
+            ui.set_lyrics_status("missing".into());
+            ui.set_lyrics_has_identification_suggestion(true);
+            ui.set_lyrics_suggested_title("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789".into());
+            ui.set_lyrics_suggested_artist("Aimer (エメ) & International Symphony Orchestra Multilingual 90".into());
+            ui.set_lyrics_suggested_album("Zankyo Sanka Deluxe Extended Edition with 100 Bonus Tracks 90".into());
+            ui.set_lyrics_suggestion_confidence(98);
+            ui.set_lyrics_suggestion_reason("Exact acoustic fingerprint match from audio characteristics".into());
+            let name_lyrics_suggest = format!("view-10d-lyrics-suggest-{width}");
+            let f_lyrics_suggest = capture_sized(&name_lyrics_suggest, width, height, &mut report);
+            audit_frame(&f_lyrics_suggest, &name_lyrics_suggest, &mut report);
+            ui.set_lyrics_has_identification_suggestion(false);
+
+            // View 10e: Lyrics Suspicious
+            ui.set_lyrics_status("suspicious".into());
+            ui.set_lyrics_is_suspicious(true);
+            ui.set_lyrics_suspicious_reason("LRC timestamps lead audio by ~1450ms across first 8 lyric lines with 90-char title discrepancy".into());
+            ui.set_lyrics_has_offset(true);
+            ui.set_lyrics_estimated_offset(-1.45);
+            let name_lyrics_suspicious = format!("view-10e-lyrics-suspicious-{width}");
+            let f_lyrics_suspicious = capture_sized(&name_lyrics_suspicious, width, height, &mut report);
+            audit_frame(&f_lyrics_suspicious, &name_lyrics_suspicious, &mut report);
+            ui.set_lyrics_is_suspicious(false);
+            ui.set_lyrics_has_offset(false);
+            ui.set_lyrics_visible(false);
+
+            // ---------------------------------------------------------------
+            // View 11: Manage Directories Dialog
+            // ---------------------------------------------------------------
+            ui.set_directories_open(true);
+            ui.set_settings_music_dirs(ModelRc::new(VecModel::from(worst_case_directories())));
+            let name_directories = format!("view-11-manage-directories-{width}");
+            let f_directories = capture_sized(&name_directories, width, height, &mut report);
+            audit_frame(&f_directories, &name_directories, &mut report);
+            let dir_card_w = 540;
+            let dir_cx0 = (w.saturating_sub(dir_card_w)) / 2;
+            let dir_cx1 = dir_cx0 + dir_card_w;
+            let dir_card_h = 480.min(h.saturating_sub(72));
+            let dir_cy0 = (h.saturating_sub(dir_card_h)) / 2;
+            let dir_cy1 = dir_cy0 + dir_card_h;
+            f_directories.check_text_outside_container(Rect::new(dir_cx0, dir_cx1, dir_cy0, dir_cy1), 30, &format!("[{name_directories}] directories dialog card"), &mut report);
+
+            // View 11b: Manage Directories Empty
+            ui.set_settings_music_dirs(ModelRc::new(VecModel::from(Vec::<SharedString>::new())));
+            let name_directories_empty = format!("view-11b-manage-directories-empty-{width}");
+            let f_directories_empty = capture_sized(&name_directories_empty, width, height, &mut report);
+            audit_frame(&f_directories_empty, &name_directories_empty, &mut report);
+            ui.set_directories_open(false);
+
+            // ---------------------------------------------------------------
+            // View 12: Batch Download Dialog (Stage 0 & Stage 1)
+            // ---------------------------------------------------------------
+            ui.set_batch_download_open(true);
+            ui.set_batch_download_stage(0);
+            ui.set_batch_total_count(10000);
+            ui.set_batch_missing_count(3000);
+            ui.set_batch_plain_count(2000);
+            ui.set_batch_suspicious_count(450);
+            let name_batch_stage0 = format!("view-12-batch-stage0-{width}");
+            let f_batch_stage0 = capture_sized(&name_batch_stage0, width, height, &mut report);
+            audit_frame(&f_batch_stage0, &name_batch_stage0, &mut report);
+            let batch_card_w = 720.min(w.saturating_sub(32));
+            let batch_cx0 = (w.saturating_sub(batch_card_w)) / 2;
+            let batch_cx1 = batch_cx0 + batch_card_w;
+            let batch_card_h = 620.min(h.saturating_sub(48));
+            let batch_cy0 = (h.saturating_sub(batch_card_h)) / 2;
+            let batch_cy1 = batch_cy0 + batch_card_h;
+            f_batch_stage0.check_text_outside_container(Rect::new(batch_cx0, batch_cx1, batch_cy0, batch_cy1), 20, &format!("[{name_batch_stage0}] batch dialog card stage 0"), &mut report);
+
+            // View 12b: Batch Download Dialog Stage 1
+            ui.set_batch_download_stage(1);
+            ui.set_batch_mode_title("Download Only for Missing (3000 Tracks)".into());
+            ui.set_batch_phase_text("Downloading track 6500 of 10000...".into());
+            ui.set_batch_current_track("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789".into());
+            ui.set_batch_progress(0.65);
+            ui.set_batch_progress_text("6500 / 10000 (65%)".into());
+            ui.set_batch_stats(BatchStats {
+                total: 10000,
+                processed: 6500,
+                remaining: 3500,
+                synced: 5000,
+                plain: 1200,
+                not_found: 200,
+                errors: 100,
+            });
+            ui.set_batch_logs(ModelRc::new(VecModel::from(worst_case_batch_logs())));
+            ui.set_batch_is_running(true);
+            let name_batch_stage1 = format!("view-12b-batch-stage1-{width}");
+            let f_batch_stage1 = capture_sized(&name_batch_stage1, width, height, &mut report);
+            audit_frame(&f_batch_stage1, &name_batch_stage1, &mut report);
+            f_batch_stage1.check_text_outside_container(Rect::new(batch_cx0, batch_cx1, 0, h), 20, &format!("[{name_batch_stage1}] batch dialog card stage 1"), &mut report);
+            ui.set_batch_download_open(false);
+        }
     });
 
     report.finish();
@@ -709,6 +989,10 @@ const TAB_COUNT: f64 = 5.0;
 /// The indicator is `tab-width - 40px` wide.
 const TAB_INDICATOR_WIDTH: usize = 56;
 
+const TAB_WIDTH_SHRUNK: f64 = 78.0;
+const TAB_GAP_SHRUNK: f64 = 5.0;
+const TAB_INDICATOR_WIDTH_SHRUNK: usize = 38;
+
 /// Fixed-size elements are placed by the layout engine, so they must be exact.
 /// Text is deliberately not measured this precisely: its width depends on the
 /// font stack of the machine running the test.
@@ -717,7 +1001,7 @@ const EXACT_CENTRE: f64 = 2.0;
 /// The tab row is centred in the window and the indicator sits under the first
 /// tab. Catches a tab row that drifts off centre as well as a stray indicator.
 fn check_header_tabs_centred(frame: &Frame, report: &mut Report) {
-    let islands = frame.violet_islands(0, W, HEADER_HEIGHT - 12, HEADER_HEIGHT);
+    let islands = frame.violet_islands(0, frame.width(), HEADER_HEIGHT - 12, HEADER_HEIGHT);
     let Some(indicator) = islands.first() else {
         report.require(
             false,
@@ -726,18 +1010,39 @@ fn check_header_tabs_centred(frame: &Frame, report: &mut Report) {
         return;
     };
 
-    let tabs_width = TAB_COUNT * (TAB_WIDTH + TAB_GAP) - TAB_GAP;
-    let tab_row_left = (WIDTH as f64 - tabs_width) / 2.0;
+    let tab_width = if frame.width() < 1100 { TAB_WIDTH_SHRUNK } else { TAB_WIDTH };
+    let tab_gap = if frame.width() < 1100 { TAB_GAP_SHRUNK } else { TAB_GAP };
+    let tabs_width = TAB_COUNT * (tab_width + tab_gap) - tab_gap;
+
+    // Center tabs in the remaining space between left logo and right actions
+    let logo_right = frame
+        .ink_extent_x(0, 250, 0, HEADER_HEIGHT - 2)
+        .map(|(_, x1)| x1 as f64)
+        .unwrap_or(201.0);
+    let actions_left = if frame.width() < 1440 {
+        frame.width() as f64 - 130.0
+    } else {
+        frame.width() as f64 - 423.0
+    };
+
+    let remaining_width = actions_left - logo_right;
+    let expected_tabs_left = logo_right + (remaining_width - tabs_width) / 2.0;
+
     report.close_to(
         "[01-tracks] header: active-tab indicator centre",
         indicator.centre_x(),
-        tab_row_left + TAB_WIDTH / 2.0,
-        EXACT_CENTRE,
+        expected_tabs_left + tab_width / 2.0,
+        5.0,
     );
+    let expected_indicator_width = if frame.width() < 1100 {
+        TAB_INDICATOR_WIDTH_SHRUNK
+    } else {
+        TAB_INDICATOR_WIDTH
+    };
     report.require(
-        indicator.width().abs_diff(TAB_INDICATOR_WIDTH) <= 2,
+        indicator.width().abs_diff(expected_indicator_width) <= 2,
         format!(
-            "[01-tracks] header: active-tab indicator is {}px wide, expected {TAB_INDICATOR_WIDTH}px",
+            "[01-tracks] header: active-tab indicator is {}px wide, expected {expected_indicator_width}px",
             indicator.width()
         ),
     );
@@ -1139,28 +1444,129 @@ fn check_button_icon_is_centred(frame: &Frame, report: &mut Report, name: &str, 
 /// The header's labelled actions (Add Folder, Download All) sit at the right of
 /// the app header.
 fn check_header_action_icons_are_centred(frame: &Frame, report: &mut Report) {
-    // Faint threshold to catch the buttons' own chrome, a 2px gap so the 8px
-    // spacing between them still splits them, and stop short of the header's
-    // bottom divider (faint, and it would merge everything into one island).
-    let buttons: Vec<Island> = frame
-        .islands(900, W, 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2)
-        .into_iter()
-        // The icon-only refresh button is self-centred and has no label.
-        .filter(|island| island.width() > 60)
-        .collect();
+    if frame.width() >= 1440 {
+        let buttons: Vec<Island> = frame
+            .islands(frame.width() - 450, frame.width(), 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2)
+            .into_iter()
+            .filter(|island| island.width() > 60)
+            .collect();
 
+        report.require(
+            !buttons.is_empty(),
+            &format!("[{}] no labelled header actions were painted", frame.width()),
+        );
+        for (index, button) in buttons.iter().enumerate() {
+            check_button_icon_is_centred(
+                frame,
+                report,
+                &format!("header action {index}"),
+                *button,
+            );
+        }
+    } else {
+        // Below 1440px: ToolbarButtons are icon-only (34px wide)
+        let buttons: Vec<Island> = frame
+            .islands(frame.width() - 160, frame.width(), 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2)
+            .into_iter()
+            .filter(|island| island.width() >= 28 && island.width() <= 45)
+            .collect();
+
+        report.require(
+            buttons.len() == 3,
+            format!(
+                "[{}] expected 3 icon-only header actions, found {}",
+                frame.width(),
+                buttons.len()
+            ),
+        );
+        for (index, button) in buttons.iter().enumerate() {
+            let icon = frame.centroid_y(button.x0, button.x1 + 1, button.y0, button.y1 + 1);
+            if let Some((icon_y, _)) = icon {
+                report.close_to(
+                    &format!("[header action {index}] button vertical centre"),
+                    icon_y,
+                    HEADER_HEIGHT as f64 / 2.0,
+                    2.0,
+                );
+            }
+        }
+    }
+}
+
+/// Asserts that none of the three header regions (Left logo, Center tabs, Right actions)
+/// overlap each other at the given resolution.
+fn check_header_regions_no_overlap(frame: &Frame, name: &str, report: &mut Report) {
+    let w = frame.width();
+
+    let tab_idx = if name.starts_with("view-01") {
+        0
+    } else if name.starts_with("view-02") {
+        1
+    } else if name.starts_with("view-03") {
+        2
+    } else if name.starts_with("view-04") {
+        3
+    } else if name.starts_with("view-05") {
+        4
+    } else {
+        return;
+    };
+
+    // 1. Left logo + title region
+    let Some(logo_extent) = frame.ink_extent_x(0, 250, 0, HEADER_HEIGHT - 2) else {
+        report.record_failure(format!("[{name}] left logo and title must be painted"));
+        return;
+    };
+    let logo_right = logo_extent.1;
+
+    // 2. Center nav tabs region
+    let violet = frame.violet_islands(0, w, HEADER_HEIGHT - 12, HEADER_HEIGHT);
+    let Some(indicator) = violet.first() else {
+        // Tab indicator only exists when one of the tabs 0..5 is active
+        return;
+    };
+    let tab_width = if w < 1100 { TAB_WIDTH_SHRUNK } else { TAB_WIDTH };
+    let tab_gap = if w < 1100 { TAB_GAP_SHRUNK } else { TAB_GAP };
+    let tabs_width = 5.0 * tab_width + 4.0 * tab_gap;
+
+    let tabs_left = indicator.centre_x() - tab_width / 2.0 - (tab_idx as f64) * (tab_width + tab_gap);
+    let tabs_right = tabs_left + tabs_width;
+
+    // 3. Right action toolbar buttons region
+    let search_start = if w < 1440 { w - 160 } else { w - 450 };
+    let buttons = frame.islands(search_start, w, 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2);
     report.require(
         !buttons.is_empty(),
-        "[01-tracks] no labelled header actions were painted",
+        format!("[{name}] right toolbar buttons were not painted"),
     );
-    for (index, button) in buttons.iter().enumerate() {
-        check_button_icon_is_centred(
-            frame,
-            report,
-            &format!("01-tracks] header action {index}"),
-            *button,
-        );
-    }
+    let actions_left = buttons.first().map(|b| b.x0).unwrap_or(w - 130);
+
+    // Assert: No overlap between adjacent regions
+    report.require(
+        logo_right < tabs_left as usize,
+        format!(
+            "[{name}] Left logo (x={logo_right}) overlaps with tabs (x={tabs_left:.1})"
+        ),
+    );
+    report.require(
+        (tabs_right as usize) < actions_left,
+        format!(
+            "[{name}] Center tabs (x={tabs_right:.1}) overlaps with right actions (x={actions_left}) - overlap is {:.1}px",
+            tabs_right - actions_left as f64
+        ),
+    );
+
+    // Clearance assertion: at least 16px clearance between adjacent regions
+    let left_clearance = tabs_left - logo_right as f64;
+    let right_clearance = actions_left as f64 - tabs_right;
+    report.require(
+        left_clearance >= 16.0,
+        format!("[{name}] Left clearance too small: {left_clearance:.1}px (expected >= 16px)"),
+    );
+    report.require(
+        right_clearance >= 16.0,
+        format!("[{name}] Right clearance too small: {right_clearance:.1}px (expected >= 16px)"),
+    );
 }
 
 /// The first painted thing inside an empty state is its icon (or its call to

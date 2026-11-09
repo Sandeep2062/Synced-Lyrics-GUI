@@ -122,9 +122,11 @@ export component ArtistsView inherits Rectangle {
                 spacing: Theme.spacing-md;
 
                 HorizontalLayout {
-                    alignment: space-between;
+                    spacing: 16px;
 
                     VerticalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
                         spacing: 4px;
                         vertical-stretch: 1;
                         alignment: center;
@@ -134,11 +136,14 @@ export component ArtistsView inherits Rectangle {
                             font-size: 24px;
                             font-weight: 800;
                             overflow: elide;
+                            min-width: 0px;
                         }
                         Text {
                             text: root.artists[root.selected-artist-index].track-count + " tracks across " + root.artists[root.selected-artist-index].album-count + " albums";
                             color: Theme.text-muted;
                             font-size: 13px;
+                            overflow: elide;
+                            min-width: 0px;
                         }
                     }
 

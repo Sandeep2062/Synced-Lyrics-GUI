@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { IconButton, ToolbarButton } from "components.slint";
 
 export component AppHeader inherits Rectangle {
+    width: 100%;
     height: Theme.header-height;
     background: Theme.bg-toolbar;
 
@@ -13,8 +14,15 @@ export component AppHeader inherits Rectangle {
     in property <float> batch-progress: 0.0;
     in property <string> batch-progress-text: "";
     private property <[string]> tabs: ["Tracks", "Albums", "Artists", "Health", "Settings"];
-    private property <length> tab-width: 96px;
-    private property <length> tab-gap: 6px;
+
+    // Responsive rules:
+    // Below ~1440px: ToolbarButtons go icon-only with tooltips
+    private property <bool> compact-actions: root.width < 1440px;
+
+    // Below ~1100px: shrink tabs
+    private property <length> tab-width: root.width < 1100px ? 78px : 96px;
+    private property <length> tab-gap: root.width < 1100px ? 5px : 6px;
+    private property <length> tab-font-size: root.width < 1100px ? 12px : 13px;
     private property <length> edge: Theme.spacing-lg;
     private property <length> tabs-width:
         root.tabs.length * (root.tab-width + root.tab-gap) - root.tab-gap;
@@ -32,7 +40,7 @@ export component AppHeader inherits Rectangle {
     }
 
     // Left: Logo + App Title (width follows its content)
-    HorizontalLayout {
+    logo_layout := HorizontalLayout {
         x: root.edge;
         y: 0;
         width: self.preferred-width;
@@ -57,9 +65,59 @@ export component AppHeader inherits Rectangle {
         }
     }
 
+    // Right: Action Buttons (anchored to the far edge)
+    actions_layout := HorizontalLayout {
+        x: parent.width - self.width - 16px;
+        y: 0;
+        width: self.preferred-width;
+        height: 100%;
+        spacing: 6px;
+        alignment: end;
+
+        ToolbarButton {
+            icon: @image-url("../assets/folder_add.svg");
+            label: "Manage Directories";
+            tooltip: "Manage Directories";
+            icon-only: root.compact-actions;
+            clicked => { root.manage-directories(); }
+        }
+
+        ToolbarButton {
+            icon: @image-url("../assets/download.svg");
+            label: root.is-batch-running
+                ? (root.batch-progress-text != "" ? ("Downloading (" + Math.round(root.batch-progress * 100) + "%)") : "Downloading...")
+                : "Download";
+            tooltip: root.is-batch-running
+                ? (root.batch-progress-text != "" ? ("Downloading (" + Math.round(root.batch-progress * 100) + "%)") : "Downloading...")
+                : "Download All Missing Lyrics";
+            accent: true;
+            icon-only: root.compact-actions;
+            in-progress: root.is-batch-running;
+            progress: root.batch-progress;
+            clicked => { root.download-all(); }
+        }
+
+        ToolbarButton {
+            icon: @image-url("../assets/refresh.svg");
+            label: root.refresh-text;
+            tooltip: root.refresh-text;
+            icon-only: root.compact-actions;
+            in-progress: root.is-refreshing;
+            progress: root.refresh-progress;
+            clicked => { root.refresh(); }
+        }
+    }
+
     // Center: Nav Tabs with a single sliding indicator
-    Rectangle {
-        x: (parent.width - self.width) / 2;
+    // Reserve space for the left logo and right group, and center tabs in the remaining space.
+    // Clamp x so tabs never intersect either region.
+    nav_tabs := Rectangle {
+        private property <length> left-space: root.edge + logo_layout.width;
+        private property <length> right-space: actions_layout.width + 16px;
+        private property <length> remaining-width: parent.width - self.left-space - self.right-space;
+        private property <length> ideal-x: self.left-space + (self.remaining-width - self.width) / 2;
+
+        x: Math.max(self.left-space, Math.min(parent.width - self.right-space - self.width, self.ideal-x));
         y: (parent.height - self.height) / 2;
         width: root.tabs-width;
         height: 38px;
@@ -86,7 +144,7 @@ export component AppHeader inherits Rectangle {
                     color: root.active-tab == i
                         ? Theme.text-primary
                         : (tab_ta.has-hover ? #D0D6E2 : Theme.text-muted);
-                    font-size: 13px;
+                    font-size: root.tab-font-size;
                     font-weight: root.active-tab == i ? 700 : 500;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -100,10 +158,9 @@ export component AppHeader inherits Rectangle {
             }
         }
 
-        // Sliding active indicator. Deliberately a flat bar: a blurred drop
-        // shadow here is re-computed on every repaint, and the player already
-        // repaints the window ~30 times a second while a song is playing.
+        // Sliding active indicator
         Rectangle {
+            visible: root.active-tab >= 0 && root.active-tab < root.tabs.length;
             x: root.active-tab * (root.tab-width + root.tab-gap) + (root.tab-width - self.width) / 2;
             y: parent.height - 3px;
             width: root.tab-width - 40px;
@@ -111,41 +168,6 @@ export component AppHeader inherits Rectangle {
             border-radius: 1.5px;
             background: Theme.accent-violet;
             animate x, width { duration: 260ms; easing: ease-in-out; }
-        }
-    }
-
-    // Right: Action Buttons (anchored to the far edge)
-    HorizontalLayout {
-        x: parent.width - self.width - 16px;
-        y: 0;
-        width: self.preferred-width;
-        height: 100%;
-        spacing: 6px;
-        alignment: end;
-
-        ToolbarButton {
-            icon: @image-url("../assets/folder_add.svg");
-            label: "Manage Directories";
-            clicked => { root.manage-directories(); }
-        }
-
-        ToolbarButton {
-            icon: @image-url("../assets/download.svg");
-            label: root.is-batch-running
-                ? (root.batch-progress-text != "" ? ("Downloading (" + Math.round(root.batch-progress * 100) + "%)") : "Downloading...")
-                : "Download";
-            accent: true;
-            in-progress: root.is-batch-running;
-            progress: root.batch-progress;
-            clicked => { root.download-all(); }
-        }
-
-        ToolbarButton {
-            icon: @image-url("../assets/refresh.svg");
-            label: root.refresh-text;
-            in-progress: root.is-refreshing;
-            progress: root.refresh-progress;
-            clicked => { root.refresh(); }
         }
     }
 }

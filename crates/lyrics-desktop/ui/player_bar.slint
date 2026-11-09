@@ -51,7 +51,6 @@ export component PlayerBar inherits Rectangle {
         HorizontalLayout {
             width: 320px;
             vertical-stretch: 1;
-            alignment: start;
             spacing: 12px;
 
             Rectangle {
@@ -94,22 +93,20 @@ export component PlayerBar inherits Rectangle {
             }
 
             VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0px;
                 vertical-stretch: 1;
                 alignment: center;
                 spacing: 3px;
 
-                HorizontalLayout {
-                    spacing: 6px;
-                    alignment: start;
-
-                    Text {
-                        text: root.has-track ? root.track-title : "No Track Selected";
-                        color: root.has-track ? Theme.text-primary : Theme.text-dim;
-                        font-size: 14px;
-                        font-weight: 700;
-                        overflow: elide;
-                        vertical-alignment: center;
-                    }
+                Text {
+                    text: root.has-track ? root.track-title : "No Track Selected";
+                    color: root.has-track ? Theme.text-primary : Theme.text-dim;
+                    font-size: 14px;
+                    font-weight: 700;
+                    overflow: elide;
+                    min-width: 0px;
+                    vertical-alignment: center;
                 }
 
                 Text {
@@ -119,6 +116,7 @@ export component PlayerBar inherits Rectangle {
                     color: Theme.text-muted;
                     font-size: 11px;
                     overflow: elide;
+                    min-width: 0px;
                 }
             }
         }

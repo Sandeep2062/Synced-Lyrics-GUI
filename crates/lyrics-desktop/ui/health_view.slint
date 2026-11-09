@@ -507,11 +507,11 @@ export component HealthView inherits Rectangle {
                         padding-left: 14px;
                         padding-right: 14px;
                         spacing: 12px;
-                        alignment: center;
 
                         // Title & Artist
                         VerticalLayout {
                             horizontal-stretch: 1;
+                            min-width: 0px;
                             alignment: center;
                             spacing: 1px;
                             Text {
@@ -520,12 +520,14 @@ export component HealthView inherits Rectangle {
                                 font-size: 13px;
                                 font-weight: 600;
                                 overflow: elide;
+                                min-width: 0px;
                             }
                             Text {
                                 text: issue.artist + (issue.album != "" ? " • " + issue.album : "");
                                 color: Theme.text-dim;
                                 font-size: 11px;
                                 overflow: elide;
+                                min-width: 0px;
                             }
                         }
 
@@ -535,6 +537,7 @@ export component HealthView inherits Rectangle {
                             alignment: start;
                             Rectangle {
                                 height: 24px;
+                                max-width: 260px;
                                 border-radius: 12px;
                                 background: issue.category == "wrong_song" ? #2C0E14 :
                                             issue.category == "offset" ? #281B09 :
@@ -548,6 +551,7 @@ export component HealthView inherits Rectangle {
 
                                 HorizontalLayout {
                                     padding-left: 10px; padding-right: 10px; alignment: center;
+                                    min-width: 0px;
                                     Text {
                                         text: issue.reason;
                                         color: issue.category == "wrong_song" ? #FDA4AF :
@@ -558,6 +562,7 @@ export component HealthView inherits Rectangle {
                                         font-weight: 600;
                                         vertical-alignment: center;
                                         overflow: elide;
+                                        min-width: 0px;
                                     }
                                 }
                             }
@@ -779,7 +784,7 @@ export component HealthView inherits Rectangle {
     if root.preview-modal-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #000000D0;
+        background: #000000F5;
 
         // Block clicks through modal backdrop
         TouchArea { width: 100%; height: 100%; }

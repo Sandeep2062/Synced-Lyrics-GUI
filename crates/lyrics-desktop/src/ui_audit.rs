@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Pixel-level assertions for the headless UI snapshot harness (`ui_snapshot`).
 //!
 //! The snapshot test renders the real Slint window into an in-memory buffer.
@@ -19,6 +20,7 @@
 
 use slint::platform::software_renderer::PremultipliedRgbaColor;
 use std::collections::HashMap;
+
 
 /// Luma at or above this counts as "ink", i.e. intentionally painted content.
 /// Low enough to catch `Theme.text-dim` (luma ~85), high enough to ignore the
@@ -46,7 +48,7 @@ const MIN_BLOCK_H: usize = 12;
 const MIN_UNIFORMITY: f64 = 0.75;
 
 /// A horizontally contiguous painted element.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Island {
     pub x0: usize,
     pub x1: usize,
@@ -70,7 +72,38 @@ impl Island {
     }
 
     pub fn width(&self) -> usize {
-        self.x1 - self.x0 + 1
+        self.x1.saturating_sub(self.x0) + 1
+    }
+
+    pub fn to_rect(&self) -> Rect {
+        Rect::new(self.x0, self.x1 + 1, self.y0, self.y1 + 1)
+    }
+}
+
+/// An axis-aligned rectangular region for layout and container boundary checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rect {
+    pub x0: usize,
+    pub x1: usize,
+    pub y0: usize,
+    pub y1: usize,
+}
+
+impl Rect {
+    pub const fn new(x0: usize, x1: usize, y0: usize, y1: usize) -> Self {
+        Self { x0, x1, y0, y1 }
+    }
+
+    pub fn width(&self) -> usize {
+        self.x1.saturating_sub(self.x0)
+    }
+
+    pub fn height(&self) -> usize {
+        self.y1.saturating_sub(self.y0)
+    }
+
+    pub fn intersects(&self, other: &Self) -> bool {
+        self.x0 < other.x1 && self.x1 > other.x0 && self.y0 < other.y1 && self.y1 > other.y0
     }
 }
 
@@ -218,6 +251,18 @@ impl Frame {
     ) -> Option<(usize, usize)> {
         let rows = self.painted_rows(x0, x1, y0, y1);
         Some((*rows.first()?, *rows.last()?))
+    }
+
+    /// Horizontal extent of the painted content in a region.
+    pub fn ink_extent_x(
+        &self,
+        x0: usize,
+        x1: usize,
+        y0: usize,
+        y1: usize,
+    ) -> Option<(usize, usize)> {
+        let cols = self.matching_columns(x0, x1, y0, y1, |x, y| self.ink(x, y));
+        Some((*cols.first()? as usize, *cols.last()? as usize))
     }
 
     /// Columns in `y0..y1` containing a pixel matching `predicate`.
@@ -447,6 +492,145 @@ impl Frame {
 
         blocks
     }
+
+    /// Checks that painted content in a container does not bleed outside `[container.x0..container.x1, container.y0..container.y1]`.
+    /// `margin` is the region around the container to check for stray/leaked ink.
+    pub fn check_text_outside_container(
+        &self,
+        container: Rect,
+        check_margin: usize,
+        label: &str,
+        report: &mut Report,
+    ) {
+        report.increment_checks();
+        let cx0 = container.x0;
+        let cx1 = container.x1;
+        let cy0 = container.y0;
+        let cy1 = container.y1.min(self.height);
+
+        // Check left of container
+        let left_x0 = cx0.saturating_sub(check_margin);
+        if left_x0 < cx0 {
+            if let Some((_, x1)) = self.ink_extent_x(left_x0, cx0, cy0, cy1) {
+                if cx0.saturating_sub(x1) > 1 {
+                    report.record_failure(format!(
+                        "{label}: text leaked outside container left (ink at x{x1} < container x{cx0})"
+                    ));
+                    return;
+                }
+            }
+        }
+        // Check right of container
+        let right_x1 = (cx1 + check_margin).min(self.width);
+        if right_x1 > cx1 {
+            if let Some((x0, _)) = self.ink_extent_x(cx1, right_x1, cy0, cy1) {
+                if x0.saturating_sub(cx1) > 1 {
+                    report.record_failure(format!(
+                        "{label}: text leaked outside container right (ink at x{x0} > container x{cx1})"
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Checks that text inside a container is not abruptly clipped against `container.x1`.
+    /// When text is unelided and clipped by an ancestor clip rectangle, ink pixels hit the exact
+    /// boundary column with high ink density across multiple rows (the vertical sliced edge of a letter).
+    pub fn check_not_clipped_at_boundary(
+        &self,
+        container: Rect,
+        label: &str,
+        report: &mut Report,
+    ) {
+        report.increment_checks();
+        let cx1 = container.x1;
+        let cy0 = container.y0;
+        let cy1 = container.y1.min(self.height);
+
+        if cx1 >= self.width || cx1 == 0 {
+            return;
+        }
+
+        let boundary_x = cx1.saturating_sub(1);
+        let boundary_ink_rows = (cy0..cy1)
+            .filter(|&y| self.ink(boundary_x, y))
+            .count();
+
+        // A sliced vertical glyph stroke typically hits 6 or more contiguous ink pixels at the clip line
+        if boundary_ink_rows >= 6 {
+            report.record_failure(format!(
+                "{label}: text appears clipped abruptly at boundary x{boundary_x} ({boundary_ink_rows} ink pixels on boundary line without elision)"
+            ));
+        }
+    }
+
+    /// Detects whether any painted islands along a horizontal band intersect or have a gap smaller than `min_gap`.
+    pub fn check_islands_no_overlap(
+        &self,
+        x0: usize,
+        x1: usize,
+        y0: usize,
+        y1: usize,
+        min_gap: usize,
+        label: &str,
+        report: &mut Report,
+    ) {
+        report.increment_checks();
+        let islands = self.ink_islands(x0, x1, y0, y1);
+        for pair in islands.windows(2) {
+            let left = &pair[0];
+            let right = &pair[1];
+            if right.x0 <= left.x1 {
+                report.record_failure(format!(
+                    "{label}: text islands intersecting! left island [x{}..{}] intersects right island [x{}..{}] (overlap of {}px)",
+                    left.x0, left.x1, right.x0, right.x1, left.x1 - right.x0 + 1
+                ));
+            } else {
+                let gap = right.x0 - left.x1;
+                if gap < min_gap {
+                    report.record_failure(format!(
+                        "{label}: text islands too close (collision): gap is {gap}px, expected >= {min_gap}px (left [x{}..{}], right [x{}..{}])",
+                        left.x0, left.x1, right.x0, right.x1
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Asserts that two adjacent bounding regions (e.g. Left column and Right column) do not intersect in ink.
+    pub fn check_regions_no_overlap(
+        &self,
+        region_a: Rect,
+        region_b: Rect,
+        min_gap: usize,
+        label: &str,
+        report: &mut Report,
+    ) {
+        report.increment_checks();
+        let extent_a = self.ink_extent_x(region_a.x0, region_a.x1, region_a.y0, region_a.y1);
+        let extent_b = self.ink_extent_x(region_b.x0, region_b.x1, region_b.y0, region_b.y1);
+
+        if let (Some((_, a_max)), Some((b_min, _))) = (extent_a, extent_b) {
+            if a_max >= b_min {
+                report.record_failure(format!(
+                    "{label}: adjacent regions intersect! Region A ink ends at x{a_max}, Region B ink starts at x{b_min} (overlap of {}px)",
+                    a_max - b_min + 1
+                ));
+            } else if b_min - a_max < min_gap {
+                report.record_failure(format!(
+                    "{label}: insufficient gap between regions: {gap}px between x{a_max} and x{b_min} (expected >= {min_gap}px)",
+                    gap = b_min - a_max
+                ));
+            }
+        }
+    }
+}
+
+/// A specific visual layout defect recorded with its screenshot identifier.
+#[derive(Clone, Debug)]
+pub struct Defect {
+    pub screenshot: String,
+    pub message: String,
 }
 
 /// Collects check outcomes so one test run reports *every* problem it found
@@ -455,15 +639,42 @@ impl Frame {
 pub struct Report {
     checks: usize,
     failures: Vec<String>,
+    defects: Vec<Defect>,
 }
 
 impl Report {
+    pub fn increment_checks(&mut self) {
+        self.checks += 1;
+    }
+
+    pub fn record_failure(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        self.failures.push(msg.clone());
+        let screenshot = if let Some(stripped) = msg.strip_prefix('[') {
+            if let Some(end) = stripped.find(']') {
+                stripped[..end].to_string()
+            } else {
+                "general".to_string()
+            }
+        } else {
+            "general".to_string()
+        };
+        self.defects.push(Defect {
+            screenshot,
+            message: msg,
+        });
+    }
+
     /// Records a boolean expectation.
     pub fn require(&mut self, ok: bool, message: impl Into<String>) {
         self.checks += 1;
         if !ok {
-            self.failures.push(message.into());
+            self.record_failure(message);
         }
+    }
+
+    pub fn defects(&self) -> &[Defect] {
+        &self.defects
     }
 
     /// Records an expectation that a measurement lands within `tolerance`px.

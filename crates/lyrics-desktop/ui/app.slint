@@ -13,8 +13,10 @@ import { HealthView, HealthTrackRow, HealthResultLog, PreviewDiffItem } from "he
 import { ManageDirectoriesDialog } from "manage_directories.slint";
 import { BatchDownloadDialog, BatchLogEntry, BatchStats } from "batch_download_dialog.slint";
 import { BatchDownloadPill } from "batch_download_pill.slint";
+import { DownloadsView, ProviderStatus, DownloadStats } from "downloads_view.slint";
+import { LogsView, LogEntry } from "logs_view.slint";
 
-export { TrackData, AlbumData, ArtistData, LyricLine, LyricWord, BatchLogEntry, BatchStats, HealthTrackRow, HealthResultLog, PreviewDiffItem }
+export { TrackData, AlbumData, ArtistData, LyricLine, LyricWord, BatchLogEntry, BatchStats, HealthTrackRow, HealthResultLog, PreviewDiffItem, ProviderStatus, DownloadStats, LogEntry }
 
 export component MainWindow inherits Window {
     title: "Synced Lyrics";
@@ -254,6 +256,24 @@ export component MainWindow inherits Window {
     callback check-updates();
     callback open-github();
 
+    // DownloadsView properties
+    in-out property <float> downloads-progress: 0.0;
+    in-out property <string> downloads-progress-text: "0/0";
+    in-out property <string> downloads-eta-text: "ETA: --:--";
+    in-out property <string> downloads-current-track: "";
+    in-out property <[ProviderStatus]> downloads-providers: [];
+    in-out property <[string]> downloads-logs: [];
+    in-out property <DownloadStats> downloads-stats: { synced: 0, plain: 0, kept: 0, not-found: 0, errors: 0 };
+    in-out property <bool> downloads-is-active: false;
+
+    // LogsView properties
+    in-out property <[LogEntry]> logs-entries: [];
+    in-out property <int> logs-missing-count: 0;
+    in-out property <int> logs-suspicious-count: 0;
+    in-out property <int> logs-synced-count: 0;
+    in-out property <int> logs-total-count: 0;
+    in-out property <int> logs-active-subtab: 0;
+
     // HealthView properties
     in-out property <int> health-total-count: 0;
     in-out property <int> health-synced-count: 0;
@@ -460,6 +480,24 @@ export component MainWindow inherits Window {
                     save-settings => { root.save-settings(); }
                     check-updates => { root.check-updates(); }
                     open-github => { root.open-github(); }
+                }
+                if root.active-tab == 5: DownloadsView {
+                    progress: root.downloads-progress;
+                    progress-text: root.downloads-progress-text;
+                    eta-text: root.downloads-eta-text;
+                    current-track: root.downloads-current-track;
+                    providers: root.downloads-providers;
+                    logs: root.downloads-logs;
+                    stats: root.downloads-stats;
+                    is-active: root.downloads-is-active;
+                }
+                if root.active-tab == 6: LogsView {
+                    logs: root.logs-entries;
+                    missing-count: root.logs-missing-count;
+                    suspicious-count: root.logs-suspicious-count;
+                    synced-count: root.logs-synced-count;
+                    total-count: root.logs-total-count;
+                    active-subtab: root.logs-active-subtab;
                 }
             }
 

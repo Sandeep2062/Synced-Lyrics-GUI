@@ -393,6 +393,8 @@ export component TextField inherits Rectangle {
 export component ToolbarButton inherits Rectangle {
     in property <image> icon;
     in property <string> label;
+    in property <string> tooltip: root.label;
+    in property <bool> icon-only: false;
     in property <bool> accent: false;
     in property <bool> in-progress: false;
     in property <float> progress: 0.0;
@@ -436,7 +438,7 @@ export component ToolbarButton inherits Rectangle {
                 padding-left: 9px;
                 padding-right: 9px;
                 alignment: center;
-                spacing: 5px;
+                spacing: root.icon-only ? 0px : 5px;
 
                 Image {
                     source: root.icon;
@@ -448,7 +450,7 @@ export component ToolbarButton inherits Rectangle {
                         : (root.accent ? #E2D7FF : Theme.text-primary);
                 }
 
-                Text {
+                if !root.icon-only: Text {
                     text: root.label;
                     color: root.in-progress
                         ? #F4F7FB
@@ -465,6 +467,28 @@ export component ToolbarButton inherits Rectangle {
         enabled: !root.in-progress;
         mouse-cursor: !root.in-progress ? pointer : default;
         clicked => { root.clicked(); }
+    }
+
+    // Floating tooltip on hover when in icon-only mode
+    if root.icon-only && ta.has-hover && root.tooltip != "": Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height + 6px;
+        width: tt_label.preferred-width + 16px;
+        height: 24px;
+        background: #141721;
+        border-radius: Theme.radius-xs;
+        border-width: 1px;
+        border-color: Theme.stroke-strong;
+        z: 100;
+
+        tt_label := Text {
+            text: root.tooltip;
+            color: Theme.text-primary;
+            font-size: 11px;
+            font-weight: 500;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
     }
 }
 

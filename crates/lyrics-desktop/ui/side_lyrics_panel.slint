@@ -123,7 +123,6 @@ export component SideLyricsPanel inherits Rectangle {
             HorizontalLayout {
                 horizontal-stretch: 1;
                 spacing: 10px;
-                alignment: start;
 
                 CoverTile {
                     cover: root.track-cover;
@@ -136,6 +135,7 @@ export component SideLyricsPanel inherits Rectangle {
                     alignment: center;
                     spacing: 2px;
                     horizontal-stretch: 1;
+                    min-width: 0px;
 
                     Text {
                         text: root.track-title != "" ? root.track-title : "No Track";
@@ -143,12 +143,14 @@ export component SideLyricsPanel inherits Rectangle {
                         font-size: 13px;
                         font-weight: 700;
                         overflow: elide;
+                        min-width: 0px;
                     }
                     Text {
                         text: root.track-artist != "" ? root.track-artist : "Select a track";
                         color: Theme.text-muted;
                         font-size: 11px;
                         overflow: elide;
+                        min-width: 0px;
                     }
                 }
             }
