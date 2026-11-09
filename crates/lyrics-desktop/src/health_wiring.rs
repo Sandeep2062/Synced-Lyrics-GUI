@@ -455,6 +455,7 @@ pub(crate) fn wire_health_preview(window: &MainWindow, app_state: &Arc<Mutex<App
 // Health Batch Execution Helpers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_apply_fixes_job(
     preview_items: Vec<PreviewDiffItem>,
     backup_enabled: bool,
@@ -592,6 +593,7 @@ fn spawn_apply_fixes_job(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_resume_job(
     pending_items: Vec<BatchJobItemRecord>,
     job: BatchJobRecord,

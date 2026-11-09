@@ -286,6 +286,7 @@ fn download_single_batch_track(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_batch_download_loop(
     db: &LibraryDb,
     candidates: &[Track],
@@ -384,6 +385,7 @@ fn execute_batch_download_loop(
     (stats, was_cancelled)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_batch_worker(
     event_loop: &slint::Weak<MainWindow>,
     state: &Arc<Mutex<AppState>>,
@@ -424,6 +426,7 @@ fn finish_batch_worker(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_batch_download_worker(
     event_loop: slint::Weak<MainWindow>,
     state: Arc<Mutex<AppState>>,
