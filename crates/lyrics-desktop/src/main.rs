@@ -9,13 +9,15 @@ mod library_model;
 pub(crate) use library_model::*;
 mod playback;
 pub(crate) use playback::*;
+mod lyrics_sync;
+pub(crate) use lyrics_sync::*;
 
 use lyrics_core::{
     apply_offset_to_lrc, compute_health_summary, download_track,
     download_track_dry_run, download_track_with_options,
-    find_active_word_index, generate_unified_diff, load_settings, parse_lines,
+    generate_unified_diff, load_settings, parse_lines,
     parse_offset_from_reason, save_settings, scan_directory_incremental, write_atomic_with_backup,
-    AppSettings, AudioEngine, BatchJobItemDraft, DownloadEvent, DownloadMode, DownloadOptions,
+    AppSettings, BatchJobItemDraft, DownloadEvent, DownloadMode, DownloadOptions,
     DownloadOutcome, GeniusProvider, HealthCategory, HealthIssue, LibraryDb, LrcLine,
     LrclibProvider, LyricsProvider, LyricsStatus, MegalobizProvider, MusixmatchProvider,
     NeteaseProvider, ProviderLyrics, ProviderName, Track,
@@ -1804,165 +1806,16 @@ fn main() -> Result<(), slint::PlatformError> {
 
 
     // -----------------------------------------------------------------------
-    // Lyrics: seek to line & copy
+    // Lyrics: synchronization, offsets, clipboard & fixing
     // -----------------------------------------------------------------------
-    {
-        let lyrics = Arc::clone(&lyric_state);
-        let engine = Arc::clone(&audio);
-        let weak = window.as_weak();
-        window.on_seek_to_line(move |line_idx| {
-            let Some(w) = weak.upgrade() else {
-                return;
-            };
-            let offset_ms = w.get_lyrics_offset_ms() as i64;
-            if let (Ok(lines), Ok(mut eng)) = (lyrics.lock(), engine.lock()) {
-                if let Some(line) = lines.get(line_idx as usize) {
-                    let target = (line.timestamp_seconds - (offset_ms as f64 / 1000.0)).max(0.0);
-                    let _ = eng.seek(target);
-                    w.set_active_line_index(line_idx);
-                    if !line.words.is_empty() {
-                        let effective_pos = (target + (offset_ms as f64 / 1000.0)).max(0.0);
-                        let cur_word = find_active_word_index(&line.words, effective_pos);
-                        update_ui_words(&w, &line.words, cur_word, effective_pos);
-                    } else if w.get_active_has_words() {
-                        w.set_active_has_words(false);
-                    }
-                }
-            }
-        });
-    }
-
-    // -----------------------------------------------------------------------
-    // Per-track offset control: adjust, set, write-to-lrc
-    // -----------------------------------------------------------------------
-    {
-        let weak = window.as_weak();
-        let state = Arc::clone(&app_state);
-        let audio_eng = Arc::clone(&audio);
-        window.on_adjust_lyrics_offset(move |delta_ms| {
-            let Some(w) = weak.upgrade() else {
-                return;
-            };
-            let current = w.get_lyrics_offset_ms();
-            let new_offset = current + delta_ms;
-            w.set_lyrics_offset_ms(new_offset);
-            w.set_lyrics_offset_save_status("".into());
-
-            // Save to DB immediately
-            if let Ok(audio) = audio_eng.lock() {
-                if let Some(path) = &audio.current_path {
-                    if let Ok(db) = open_database() {
-                        let _ = db.update_track_offset(path, new_offset as i64);
-                    }
-                    if let Ok(mut s) = state.lock() {
-                        if let Some(t) = s.all_tracks.iter_mut().find(|t| t.audio_path == *path) {
-                            t.lyrics_offset_ms = new_offset as i64;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    {
-        let weak = window.as_weak();
-        let state = Arc::clone(&app_state);
-        let audio_eng = Arc::clone(&audio);
-        window.on_set_lyrics_offset(move |target_ms| {
-            let Some(w) = weak.upgrade() else {
-                return;
-            };
-            w.set_lyrics_offset_ms(target_ms);
-            w.set_lyrics_offset_save_status("".into());
-
-            if let Ok(audio) = audio_eng.lock() {
-                if let Some(path) = &audio.current_path {
-                    if let Ok(db) = open_database() {
-                        let _ = db.update_track_offset(path, target_ms as i64);
-                    }
-                    if let Ok(mut s) = state.lock() {
-                        if let Some(t) = s.all_tracks.iter_mut().find(|t| t.audio_path == *path) {
-                            t.lyrics_offset_ms = target_ms as i64;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    {
-        let weak = window.as_weak();
-        let state = Arc::clone(&app_state);
-        let audio_eng = Arc::clone(&audio);
-        let lyric_st = Arc::clone(&lyric_state);
-        window.on_write_lyrics_offset_to_file(move || {
-            let Some(w) = weak.upgrade() else {
-                return;
-            };
-            let offset_ms = w.get_lyrics_offset_ms() as i64;
-            if offset_ms == 0 {
-                return;
-            }
-
-            let path_opt = audio_eng.lock().ok().and_then(|a| a.current_path.clone());
-            let Some(path) = path_opt else {
-                return;
-            };
-
-            let track_opt = state
-                .lock()
-                .ok()
-                .and_then(|s| s.all_tracks.iter().find(|t| t.audio_path == path).cloned());
-            let Some(track) = track_opt else {
-                return;
-            };
-
-            if let Ok(content) = fs::read_to_string(&track.lrc_path) {
-                let offset_sec = offset_ms as f64 / 1000.0;
-                let updated = lyrics_core::apply_offset_tag(&content, offset_sec);
-                if fs::write(&track.lrc_path, &updated).is_ok() {
-                    // Reset DB offset to 0 since it is now baked into the file
-                    if let Ok(db) = open_database() {
-                        let _ = db.update_track_offset(&path, 0);
-                    }
-                    if let Ok(mut s) = state.lock() {
-                        if let Some(t) = s.all_tracks.iter_mut().find(|t| t.audio_path == path) {
-                            t.lyrics_offset_ms = 0;
-                        }
-                    }
-                    w.set_lyrics_offset_ms(0);
-                    w.set_lyrics_offset_save_status("Saved to .lrc".into());
-
-                    // Reload lines
-                    let reloaded = lyrics_core::parse_lines(&updated);
-                    let ui_lines: Vec<LyricLine> = reloaded
-                        .iter()
-                        .map(|l| LyricLine {
-                            timestamp: l.timestamp_seconds as f32,
-                            text: l.text.clone().into(),
-                        })
-                        .collect();
-                    w.set_lyrics_lines(ModelRc::new(VecModel::from(ui_lines)));
-                    if let Ok(mut ls) = lyric_st.lock() {
-                        *ls = reloaded;
-                    }
-                }
-            }
-        });
-    }
-    {
-        let lyrics = Arc::clone(&lyric_state);
-        window.on_copy_lyrics(move || {
-            if let Ok(lines) = lyrics.lock() {
-                let text: String = lines
-                    .iter()
-                    .map(|l| l.text.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let _ = text;
-            }
-        });
-    }
+    wire_lyrics_sync(
+        &window,
+        &app_state,
+        &audio,
+        &lyric_state,
+        &art_loader,
+        &waveform_cache,
+    );
 
     // -----------------------------------------------------------------------
     // Fetch single track lyrics
@@ -2084,104 +1937,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // -----------------------------------------------------------------------
     // Suspicious lyrics actions: Fix offset (tag / rewrite) & Replace lyrics
     // -----------------------------------------------------------------------
-    {
-        let weak = window.as_weak();
-        let state = Arc::clone(&app_state);
-        let audio_eng = Arc::clone(&audio);
-        let lyric_st = Arc::clone(&lyric_state);
-        let cache = Arc::clone(&art_loader);
-        let wf_cache = Arc::clone(&waveform_cache);
-        window.on_fix_offset_tag(move || {
-            let Some(w) = weak.upgrade() else { return };
-            let offset_sec = w.get_lyrics_estimated_offset() as f64;
-            let current_path = audio_eng.lock().ok().and_then(|e| e.current_path.clone());
-            let Ok(mut s) = state.lock() else { return };
-            let idx_opt = s
-                .current_filtered_row
-                .and_then(|row| s.filtered_tracks.get(row).copied());
-            let track_opt = if let Some(ref path) = current_path {
-                s.all_tracks.iter_mut().find(|t| &t.audio_path == path)
-            } else if let Some(idx) = idx_opt {
-                s.all_tracks.get_mut(idx)
-            } else {
-                None
-            };
-            let Some(track) = track_opt else { return };
 
-            if let Ok(contents) = fs::read_to_string(&track.lrc_path) {
-                let fixed = lyrics_core::apply_offset_tag(&contents, offset_sec);
-                if fs::write(&track.lrc_path, &fixed).is_ok() {
-                    track.status = LyricsStatus::Synced;
-                    track.suspicious_reason = None;
-                    if let Ok(db) = open_database() {
-                        let _ =
-                            db.update_lyrics_status(&track.audio_path, LyricsStatus::Synced, None);
-                    }
-                    let track_clone = track.clone();
-                    drop(s);
-                    setup_track_for_playback(
-                        &track_clone,
-                        &w,
-                        &audio_eng,
-                        &lyric_st,
-                        &cache,
-                        &wf_cache,
-                        false,
-                    );
-                    load_library_into_ui(&w, &state, &cache);
-                }
-            }
-        });
-    }
-    {
-        let weak = window.as_weak();
-        let state = Arc::clone(&app_state);
-        let audio_eng = Arc::clone(&audio);
-        let lyric_st = Arc::clone(&lyric_state);
-        let cache = Arc::clone(&art_loader);
-        let wf_cache = Arc::clone(&waveform_cache);
-        window.on_fix_offset_rewrite(move || {
-            let Some(w) = weak.upgrade() else { return };
-            let offset_sec = w.get_lyrics_estimated_offset() as f64;
-            let current_path = audio_eng.lock().ok().and_then(|e| e.current_path.clone());
-            let Ok(mut s) = state.lock() else { return };
-            let idx_opt = s
-                .current_filtered_row
-                .and_then(|row| s.filtered_tracks.get(row).copied());
-            let track_opt = if let Some(ref path) = current_path {
-                s.all_tracks.iter_mut().find(|t| &t.audio_path == path)
-            } else if let Some(idx) = idx_opt {
-                s.all_tracks.get_mut(idx)
-            } else {
-                None
-            };
-            let Some(track) = track_opt else { return };
-
-            if let Ok(contents) = fs::read_to_string(&track.lrc_path) {
-                let fixed = lyrics_core::rewrite_timestamps_with_offset(&contents, offset_sec);
-                if fs::write(&track.lrc_path, &fixed).is_ok() {
-                    track.status = LyricsStatus::Synced;
-                    track.suspicious_reason = None;
-                    if let Ok(db) = open_database() {
-                        let _ =
-                            db.update_lyrics_status(&track.audio_path, LyricsStatus::Synced, None);
-                    }
-                    let track_clone = track.clone();
-                    drop(s);
-                    setup_track_for_playback(
-                        &track_clone,
-                        &w,
-                        &audio_eng,
-                        &lyric_st,
-                        &cache,
-                        &wf_cache,
-                        false,
-                    );
-                    load_library_into_ui(&w, &state, &cache);
-                }
-            }
-        });
-    }
     {
         let weak = window.as_weak();
         let state = Arc::clone(&app_state);

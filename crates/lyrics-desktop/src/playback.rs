@@ -1,16 +1,16 @@
 use crate::art_loader::{album_cover_image, track_cover_now, ArtLoader};
 use crate::audio_source;
 use crate::library_model::{format_time, AppState};
-use crate::{LyricLine, LyricWord, MainWindow};
+use crate::lyrics_sync::*;
+use crate::MainWindow;
 use lofty::prelude::AudioFile;
 use lyrics_core::{
-    find_active_line_index, find_active_word_index, parse_lines, AudioEngine, LyricsStatus, Track,
-    WaveformStore, LrcLine, LrcWord,
+    find_active_line_index, find_active_word_index, AudioEngine, Track,
+    WaveformStore, LrcLine,
 };
 use rodio::Source;
 use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
 use std::collections::HashMap;
-use std::fs;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -250,164 +250,6 @@ pub(crate) fn compute_audio_waveform(audio_path: &str) -> Vec<f32> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Lyrics display & active words helper
-// ---------------------------------------------------------------------------
-
-pub(crate) fn update_ui_words(
-    window: &MainWindow,
-    words: &[LrcWord],
-    cur_word_idx: i32,
-    current_time: f64,
-) {
-    if !window.get_active_has_words() {
-        window.set_active_has_words(true);
-    }
-    let mut row1_words = Vec::new();
-    let mut row2_words = Vec::new();
-    let mut acc_len = 0;
-
-    for (i, w) in words.iter().enumerate() {
-        let is_sung = w.timestamp_seconds <= current_time;
-        let is_current = i as i32 == cur_word_idx;
-        let ui_word = LyricWord {
-            text: w.text.as_str().into(),
-            is_sung,
-            is_current,
-        };
-        acc_len += w.text.chars().count() + 1;
-        if acc_len <= 30 || row1_words.is_empty() {
-            row1_words.push(ui_word);
-        } else {
-            row2_words.push(ui_word);
-        }
-    }
-
-    window.set_active_words_row1(ModelRc::new(VecModel::from(row1_words)));
-    window.set_active_words_row2(ModelRc::new(VecModel::from(row2_words)));
-}
-
-pub(crate) fn sync_lyrics_to_position(
-    window: &MainWindow,
-    lines: &[LrcLine],
-    position: f64,
-) {
-    let offset_ms = window.get_lyrics_offset_ms() as i64;
-    let effective_position = (position + (offset_ms as f64 / 1000.0)).max(0.0);
-
-    let active_idx = find_active_line_index(lines, effective_position);
-    if window.get_active_line_index() != active_idx {
-        window.set_active_line_index(active_idx);
-    }
-
-    if active_idx >= 0 && (active_idx as usize) < lines.len() {
-        let line = &lines[active_idx as usize];
-        if !line.words.is_empty() {
-            let cur_word_idx = find_active_word_index(&line.words, effective_position);
-            update_ui_words(window, &line.words, cur_word_idx, effective_position);
-        } else if window.get_active_has_words() {
-            window.set_active_has_words(false);
-        }
-    } else if window.get_active_has_words() {
-        window.set_active_has_words(false);
-    }
-}
-
-pub(crate) fn setup_lyrics_for_track(
-    track: &Track,
-    window: &MainWindow,
-    lyric_state: &Arc<Mutex<Vec<LrcLine>>>,
-) -> bool {
-    let mut is_suspicious = track.status == LyricsStatus::Suspicious;
-    let mut suspicious_reason = track.suspicious_reason.clone().unwrap_or_default();
-    let mut has_offset = false;
-    let mut estimated_offset = 0.0f32;
-
-    let has_lyrics = if let Ok(contents) = fs::read_to_string(&track.lrc_path) {
-        let lines = parse_lines(&contents);
-        let is_synced = lines.iter().any(|l| l.timestamp_seconds > 0.0);
-        if is_synced {
-            let ui_lines: Vec<LyricLine> = lines
-                .iter()
-                .map(|l| LyricLine {
-                    timestamp: l.timestamp_seconds as f32,
-                    text: l.text.clone().into(),
-                })
-                .collect();
-            window.set_lyrics_lines(ModelRc::new(VecModel::from(ui_lines)));
-            window.set_lyrics_plain_text("".into());
-
-            let report =
-                lyrics_core::audit_lrc(&contents, track.duration_seconds, &track.title, &[]);
-            if report.is_suspicious() {
-                is_suspicious = true;
-                if suspicious_reason.is_empty() {
-                    suspicious_reason = report.reason_summary().unwrap_or_default();
-                }
-                if let Some(offset) = report.estimated_offset_seconds {
-                    has_offset = true;
-                    estimated_offset = offset as f32;
-                }
-            }
-
-            window.set_lyrics_status(
-                if is_suspicious {
-                    "suspicious"
-                } else {
-                    "synced"
-                }
-                .into(),
-            );
-            if let Ok(mut ls) = lyric_state.lock() {
-                *ls = lines;
-            }
-            true
-        } else if !contents.trim().is_empty() {
-            window.set_lyrics_lines(ModelRc::new(VecModel::from(Vec::<LyricLine>::new())));
-            window.set_lyrics_plain_text(contents.into());
-            window.set_lyrics_status("plain".into());
-            if let Ok(mut ls) = lyric_state.lock() {
-                ls.clear();
-            }
-            true
-        } else {
-            window.set_lyrics_lines(ModelRc::new(VecModel::from(Vec::<LyricLine>::new())));
-            window.set_lyrics_plain_text("".into());
-            window.set_lyrics_status("missing".into());
-            if let Ok(mut ls) = lyric_state.lock() {
-                ls.clear();
-            }
-            false
-        }
-    } else {
-        window.set_lyrics_lines(ModelRc::new(VecModel::from(Vec::<LyricLine>::new())));
-        window.set_lyrics_plain_text("".into());
-        window.set_lyrics_status("missing".into());
-        if let Ok(mut ls) = lyric_state.lock() {
-            ls.clear();
-        }
-        false
-    };
-
-    window.set_lyrics_is_suspicious(is_suspicious);
-    window.set_lyrics_suspicious_reason(suspicious_reason.into());
-    window.set_lyrics_has_offset(has_offset);
-    window.set_lyrics_estimated_offset(estimated_offset);
-    window.set_lyrics_has_identification_suggestion(false);
-    window.set_lyrics_is_identifying(false);
-    window.set_lyrics_offset_ms(track.lyrics_offset_ms as i32);
-    window.set_lyrics_offset_save_status("".into());
-    window.set_active_has_words(false);
-    window.set_active_words_row1(ModelRc::new(VecModel::from(Vec::<LyricWord>::new())));
-    window.set_active_words_row2(ModelRc::new(VecModel::from(Vec::<LyricWord>::new())));
-    window.set_has_lyrics(has_lyrics);
-
-    if has_lyrics {
-        window.set_lyrics_visible(true);
-    }
-
-    has_lyrics
-}
 
 // ---------------------------------------------------------------------------
 // Track setup & waveform loading
