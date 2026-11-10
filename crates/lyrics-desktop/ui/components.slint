@@ -153,7 +153,7 @@ export component StatusPill inherits Rectangle {
             width: 100%;
             alignment: center;
 
-            Rectangle {
+            pill_box := Rectangle {
                 width: root.pill-width;
                 height: 22px;
                 border-radius: 11px;
@@ -170,9 +170,13 @@ export component StatusPill inherits Rectangle {
                     spacing: 5px;
 
                     // A fixed-size child of a layout is start-aligned, so an
-                    // explicit `y` is what actually centres it on the pill.
+                    // explicit `y` is what actually centres it on the pill. It has
+                    // to be measured against the pill box, not the layout: the
+                    // layout shrinks to the text box, whose descender space is
+                    // deeper than its ascender space, and the dot then rides ~6px
+                    // high inside the pill.
                     Rectangle {
-                        y: (parent.height - self.height) / 2;
+                        y: (pill_box.height - self.height) / 2;
                         width: 6px;
                         height: 6px;
                         border-radius: 3px;

@@ -1476,11 +1476,13 @@ fn check_status_markers_are_centred(frame: &Frame, report: &mut Report) {
     let rows = frame.ink_bands(0, W, 148, H - PLAYER_HEIGHT);
     let mut measured = 0;
     for (band_top, band_bottom) in rows {
-        // The pill is the row's column group sitting under the STATUS header.
+        // The pill is the row's column group sitting under the STATUS header. The
+        // row's own card border spans the whole list width and is faintly painted,
+        // so it has to be excluded by bound, or it becomes "the pill".
         let Some(pill) = frame
-            .faint_islands(0, W, band_top, band_bottom + 1)
+            .ink_islands(0, W, band_top, band_bottom + 1)
             .into_iter()
-            .filter(|island| island.width() > 40)
+            .filter(|island| (40..=200).contains(&island.width()))
             .min_by(|a, b| {
                 (a.centre_x() - status_centre)
                     .abs()
@@ -1497,22 +1499,35 @@ fn check_status_markers_are_centred(frame: &Frame, report: &mut Report) {
         };
         let centre = (pill_top + pill_bottom) as f64 / 2.0;
 
-        // Inset past the 1px border and its 11px corner radius: with the inset at
-        // 14px no border pixel can fall inside, so this is marker + label only.
-        let Some((inner_top, inner_bottom)) = frame.ink_extent_y(
-            pill.x0 + 14,
-            pill.x1.saturating_sub(13),
-            pill_top + 3,
-            pill_bottom.saturating_sub(1),
-        ) else {
+        // The marker sits 5px clear of the label, so grouping the pill's interior
+        // with a 3px gap isolates the marker from the text. Measuring marker and
+        // label together made the result depend on the platform's glyph metrics:
+        // the same layout passes on Linux and lands 4px off on macOS.
+        let Some(marker) = frame
+            .islands(
+                pill.x0 + 3,
+                pill.x1.saturating_sub(2),
+                pill_top + 2,
+                pill_bottom,
+                FAINT_LUMA,
+                3,
+            )
+            .into_iter()
+            .find(|island| island.width() <= 10)
+        else {
+            continue;
+        };
+        let Some((marker_top, marker_bottom)) =
+            frame.ink_extent_y(marker.x0, marker.x1 + 1, pill_top + 2, pill_bottom)
+        else {
             continue;
         };
 
-        let asymmetry = (inner_top as f64 - centre) + (inner_bottom as f64 - centre);
+        let marker_centre = (marker_top + marker_bottom) as f64 / 2.0;
         report.close_to(
             &format!("[01-tracks] status marker centre (row at y{band_top})"),
-            asymmetry,
-            0.0,
+            marker_centre,
+            centre,
             EXACT_CENTRE,
         );
         measured += 1;
