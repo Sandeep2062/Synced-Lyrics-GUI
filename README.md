@@ -51,9 +51,15 @@
 - 🖤 **Pure-Black Modern UI**: Native desktop GUI built using [Slint](https://slint.dev/) with a clean, high-contrast dark theme inspired by LRCGET. Fluid 60fps performance, zero webview, zero electron bloat, and minimal memory footprint (<50MB RAM idle).
 - 🎤 **Karaoke Player & Lyrics Viewer**:
   - Built-in native audio engine powered by [Rodio](https://github.com/RustAudio/rodio) and [Symphonia](https://github.com/pdeljanov/Symphonia).
-  - Smooth auto-scrolling lyrics with active line highlighting and click-to-seek playback.
+  - Smooth auto-scrolling lyrics with cubic-bezier easing, active line highlighting, word-level karaoke transitions, and click-to-seek playback.
+  - Manual-scroll pause: browsing away pauses auto-scroll and displays a floating "Jump to current" recovery pill.
+  - Fullscreen Now Playing Stage (`F`): immersive visual stage with waveform scrubber, large cover art, and synced lyrics.
+  - Floating Mini-Player Mode (`P`): compact corner widget with cover, transport controls, and real-time active lyric ticker.
+  - Slide-Out Play Queue Drawer (`Q`): view upcoming tracks with track numbers, durations, and click-to-play.
   - Interactive audio waveform scrubber with live audio amplitude reactive bars.
-  - Volume control with mute toggle and 10-second skip/rewind controls.
+  - Pinned Per-Track Offset Toolbar: adjust timing on-the-fly (`-500ms`, `-100ms`, `+100ms`, `+500ms`, `Reset`) and write directly to `.lrc` with one click (`S`).
+  - Persistent volume and mute state saved to disk across app sessions.
+  - Comprehensive keyboard navigation (`Space`, `Left`/`Right` 10s skip, `Up`/`Down` volume, `M` mute, `P` mini player, `F` fullscreen, `Esc` dismiss).
 - 🔄 **5 Intelligent Download Modes**:
   - **Missing Only**: Searches lyrics exclusively for tracks lacking an `.lrc` file.
   - **Smart Update**: Downloads missing lyrics, upgrades plain text to time-synced lyrics, and audits suspicious tracks.

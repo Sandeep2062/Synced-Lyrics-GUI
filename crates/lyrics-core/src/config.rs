@@ -35,6 +35,8 @@ pub struct AppSettings {
     pub request_interval_secs: f64,
     pub retry_days: u32,
     pub volume: f32,
+    #[serde(default)]
+    pub muted: bool,
     pub window_width: u32,
     pub window_height: u32,
     pub scan_on_startup: bool,
@@ -55,6 +57,7 @@ impl Default for AppSettings {
             request_interval_secs: 0.8,
             retry_days: 14,
             volume: 0.7,
+            muted: false,
             window_width: 1280,
             window_height: 820,
             scan_on_startup: false,
@@ -73,6 +76,8 @@ struct LegacyConfig {
     retry_days: Option<u32>,
     #[serde(default)]
     volume: Option<f32>,
+    #[serde(default)]
+    muted: Option<bool>,
     #[serde(default)]
     window_geometry: Option<String>,
 }
@@ -178,6 +183,9 @@ pub fn parse_legacy_config_str(contents: &str) -> Result<AppSettings, ConfigErro
         if (0.0..=1.0).contains(&vol) {
             settings.volume = vol;
         }
+    }
+    if let Some(m) = legacy.muted {
+        settings.muted = m;
     }
     if let Some(geom) = legacy.window_geometry {
         if let Some((w, h)) = geom.split_once('x') {

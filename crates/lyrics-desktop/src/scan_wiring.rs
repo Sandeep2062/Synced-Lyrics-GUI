@@ -1,7 +1,7 @@
 use crate::art_loader::ArtLoader;
 use crate::library_model::{load_library_into_ui, open_database, AppState};
 use crate::MainWindow;
-use lyrics_core::scan_directory_incremental;
+use lyrics_core::{scan_directory_incremental, MutexExt};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -151,7 +151,7 @@ pub(crate) fn wire_refresh(
                     Some(&existing_map),
                     move |idx, total| {
                         let should_update = {
-                            let mut last = last_update_cb.lock().unwrap();
+                            let mut last = last_update_cb.lock_ignore_poison();
                             if idx == 0
                                 || idx == total
                                 || last.elapsed() >= Duration::from_millis(50)

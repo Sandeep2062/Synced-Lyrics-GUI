@@ -155,7 +155,7 @@ export component ArtistsView inherits Rectangle {
                             border-radius: 18px;
                             background: dl_art_ta.pressed
                                 ? Theme.accent-violet-strong
-                                : (dl_art_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                                : (dl_art_ta.has-hover ? Theme.accent-violet-hover : Theme.accent-violet);
                             animate background { duration: Theme.motion-fast; easing: ease-out; }
 
                             HorizontalLayout {
@@ -187,7 +187,7 @@ export component ArtistsView inherits Rectangle {
                         border-radius: Theme.radius-sm;
                         background: row_ta.pressed
                             ? Theme.bg-active
-                            : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? #000000 : transparent));
+                            : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? Theme.bg-card : transparent));
                         animate background { duration: Theme.motion-fast; easing: ease-out; }
 
                         row_ta := TouchArea {

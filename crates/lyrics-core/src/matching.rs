@@ -242,7 +242,6 @@ fn is_remaster_year(s: &str) -> bool {
 
 fn strip_inline_feature_or_producer(s: &str) -> String {
     // Look for word boundaries followed by ft, ft., feat, feat., featuring, prod, prod by, produced by
-    let lower = s.to_ascii_lowercase();
     let keywords = [
         " ft. ",
         " ft ",
@@ -258,9 +257,12 @@ fn strip_inline_feature_or_producer(s: &str) -> String {
     ];
 
     let mut cut_index = None;
-    for kw in &keywords {
-        if let Some(idx) = lower.find(kw) {
-            cut_index = Some(cut_index.map_or(idx, |cur: usize| cur.min(idx)));
+    for (byte_idx, _) in s.char_indices() {
+        let suffix = &s[byte_idx..];
+        for kw in &keywords {
+            if suffix.get(..kw.len()).is_some_and(|sub| sub.eq_ignore_ascii_case(kw)) {
+                cut_index = Some(cut_index.map_or(byte_idx, |cur: usize| cur.min(byte_idx)));
+            }
         }
     }
 
@@ -276,10 +278,12 @@ fn strip_suffix_noise(s: &str) -> String {
     for sep in &[" - ", " / "] {
         if let Some((head, tail)) = cur.rsplit_once(sep) {
             let tail_lower = tail.trim().to_ascii_lowercase();
-            if SUFFIX_NOISE_PATTERNS
-                .iter()
-                .any(|&p| tail_lower == p || tail_lower.starts_with(p))
-            {
+            let is_noise = is_remaster_year(&tail_lower)
+                || is_four_digit_year(&tail_lower)
+                || SUFFIX_NOISE_PATTERNS
+                    .iter()
+                    .any(|&p| tail_lower == p || tail_lower.starts_with(p));
+            if is_noise {
                 cur = head.trim();
             }
         }

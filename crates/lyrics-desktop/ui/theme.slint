@@ -1,57 +1,156 @@
 export global Theme {
-    // Mode Switcher — defaults to true dark OLED
+    // Mode Switcher — controls dark elevation vs clean light mode
     in-out property <bool> is-dark: true;
 
-    // Colors
-    //
-    // The app is deliberately painted on true black in dark mode: every large surface is
-    // #000000 and panels are told apart by their 1px strokes, not by a lighter
-    // fill. Only the transient interaction states (hover/pressed) and the
-    // artwork placeholder lift off the black.
-    // In light mode, soft clean surfaces and subtle borders are used.
-    out property <color> bg-primary: root.is-dark ? #000000 : #F8FAFC;
-    out property <color> bg-surface: root.is-dark ? #000000 : #FFFFFF;
-    out property <color> bg-card: root.is-dark ? #000000 : #FFFFFF;
-    out property <color> bg-toolbar: root.is-dark ? #000000 : #FFFFFF;
-    out property <color> bg-hover: root.is-dark ? #0E1017 : #F1F5F9;
-    out property <color> bg-active: root.is-dark ? #161922 : #E2E8F0;
-    out property <color> bg-elevated: root.is-dark ? #08090D : #FFFFFF;
-    out property <color> accent-violet: #8B5CF6;
-    out property <color> accent-violet-strong: #7C3AED;
-    out property <color> accent-violet-soft: root.is-dark ? #221B3D : #EDE9FE;
-    out property <color> accent-cyan: #06B6D4;
-    out property <color> text-primary: root.is-dark ? #F4F7FB : #0F172A;
-    out property <color> text-muted: root.is-dark ? #94A3B8 : #64748B;
-    out property <color> text-dim: root.is-dark ? #475569 : #94A3B8;
-    out property <color> status-synced: #34D399;
-    out property <color> status-plain: #38BDF8;
-    out property <color> status-missing: #FB7185;
-    out property <color> status-suspicious: #FBBF24;
-    out property <color> divider: root.is-dark ? #252932 : #E2E8F0;
-    out property <color> stroke-soft: root.is-dark ? #202434 : #E2E8F0;
-    out property <color> stroke-strong: root.is-dark ? #3A4258 : #CBD5E1;
-    out property <color> track-idle: root.is-dark ? #4A5170 : #CBD5E1;
+    // ---------------------------------------------------------------------------
+    // Elevation Surfaces (Replacing all-#000 surfaces)
+    // ---------------------------------------------------------------------------
+    // Level 0: App Canvas / Base
+    out property <color> bg-canvas: root.is-dark ? #0D1117 : #F8FAFC;
+    out property <color> bg-primary: root.bg-canvas;
 
-    // Dynamic Dominant Palette (derived from currently playing track artwork)
+    // Level 1: Primary Surfaces (Header, Toolbar, Player Bar, Side Panels)
+    out property <color> bg-surface: root.is-dark ? #151B26 : #FFFFFF;
+    out property <color> bg-toolbar: root.bg-surface;
+    out property <color> bg-panel: root.bg-surface;
+
+    // Level 2: Cards, List Rows, Content Containers
+    out property <color> bg-card: root.is-dark ? #1B2332 : #FFFFFF;
+    out property <color> bg-elevated: root.is-dark ? #222C3E : #FFFFFF;
+
+    // Level 3: Overlays, Drawers, Modals & Dialogs
+    out property <color> bg-dialog: root.is-dark ? #222C3E : #FFFFFF;
+    out property <color> bg-modal: root.is-dark ? #222C3E : #FFFFFF;
+
+    // Level 4: Floating Tooltips, Dropdown Menus, Badges
+    out property <color> bg-tooltip: root.is-dark ? #263147 : #FFFFFF;
+    out property <color> bg-floating: root.is-dark ? #263147 : #FFFFFF;
+
+    // ---------------------------------------------------------------------------
+    // Interactive States (Hover / Pressed)
+    // ---------------------------------------------------------------------------
+    out property <color> bg-hover: root.is-dark ? #1E2638 : #F1F5F9;
+    out property <color> bg-active: root.is-dark ? #28324A : #E2E8F0;
+    out property <color> bg-card-hover: root.is-dark ? #222C3E : #F8FAFC;
+    out property <color> bg-card-active: root.is-dark ? #28324A : #EDF2F7;
+
+    // ---------------------------------------------------------------------------
+    // Focus Rings (WCAG 2.4.7 / 2.4.11 / 2.4.12)
+    // ---------------------------------------------------------------------------
+    out property <color> focus-ring-color: root.is-dark ? #A78BFA : #7C3AED;
+    out property <length> focus-ring-width: 2px;
+    out property <length> focus-ring-offset: 2px;
+    out property <color> stroke-focus: root.focus-ring-color;
+
+    // ---------------------------------------------------------------------------
+    // Accent Palette
+    // ---------------------------------------------------------------------------
+    out property <color> accent-violet: root.is-dark ? #8B5CF6 : #7C3AED;
+    out property <color> accent-violet-strong: root.is-dark ? #7C3AED : #6D28D9;
+    out property <color> accent-violet-hover: root.is-dark ? #9D72FF : #6D28D9;
+    out property <color> accent-violet-active: root.is-dark ? #6D28D9 : #5B21B6;
+    out property <color> accent-violet-soft: root.is-dark ? #221B3D : #EDE9FE;
+    out property <color> accent-cyan: root.is-dark ? #06B6D4 : #0284C7;
+
+    // ---------------------------------------------------------------------------
+    // Typography Tokens (WCAG AA Compliant: Contrast >= 4.5:1 on all surfaces)
+    // ---------------------------------------------------------------------------
+    out property <string> font-family: "Segoe UI, -apple-system, BlinkMacSystemFont, 'Inter', Roboto, sans-serif";
+    out property <string> font-mono: "Cascadia Code, Consolas, 'Courier New', monospace";
+
+    out property <color> text-primary: root.is-dark ? #F8FAFC : #0F172A;
+    out property <color> text-muted: root.is-dark ? #9BB0C7 : #475569;
+    // Remediated text-dim: >= 7.0:1 in Dark, >= 6.3:1 in Light
+    out property <color> text-dim: root.is-dark ? #94A7BD : #526173;
+    out property <color> text-inverse: root.is-dark ? #0F172A : #F8FAFC;
+
+    // ---------------------------------------------------------------------------
+    // Status Tokens (WCAG AA Compliant across both themes)
+    // ---------------------------------------------------------------------------
+    out property <color> status-synced: root.is-dark ? #34D399 : #047857;
+    out property <color> status-plain: root.is-dark ? #38BDF8 : #0369A1;
+    out property <color> status-missing: root.is-dark ? #FB7185 : #BE123C;
+    out property <color> status-suspicious: root.is-dark ? #FBBF24 : #B45309;
+
+    // Status pill background tints
+    out property <color> status-synced-bg: root.is-dark ? #0D281E : #ECFDF5;
+    out property <color> status-plain-bg: root.is-dark ? #0C2333 : #F0F9FF;
+    out property <color> status-missing-bg: root.is-dark ? #2B1117 : #FFF1F2;
+    out property <color> status-suspicious-bg: root.is-dark ? #2B210C : #FFFBEB;
+
+    // ---------------------------------------------------------------------------
+    // Strokes & Dividers
+    // ---------------------------------------------------------------------------
+    out property <color> divider: root.is-dark ? #20273A : #E2E8F0;
+    out property <color> stroke-soft: root.is-dark ? #262F44 : #E2E8F0;
+    out property <color> stroke-strong: root.is-dark ? #3C4A6B : #CBD5E1;
+    out property <color> stroke-hover: root.is-dark ? #4B5775 : #94A3B8;
+    out property <color> track-idle: root.is-dark ? #263147 : #CBD5E1;
+
+    // ---------------------------------------------------------------------------
+    // Empty, Error, and Loading States
+    // ---------------------------------------------------------------------------
+    out property <color> state-empty-bg: root.is-dark ? #131824 : #F8FAFC;
+    out property <color> state-empty-border: root.is-dark ? #262F44 : #E2E8F0;
+    out property <color> state-error-text: root.is-dark ? #FCA5A5 : #B91C1C;
+    out property <color> state-error-bg: root.is-dark ? #2A151B : #FEF2F2;
+    out property <color> state-error-border: root.is-dark ? #EF444488 : #FCA5A5;
+    out property <color> state-loading-spinner: root.accent-violet;
+    out property <color> state-loading-track: root.is-dark ? #263147 : #E2E8F0;
+
+    // ---------------------------------------------------------------------------
+    // Dynamic Dominant Palette (Derived from currently playing track artwork)
+    // ---------------------------------------------------------------------------
     in-out property <color> dominant-color-1: #8B5CF6;
     in-out property <color> dominant-color-2: #3B82F6;
     in-out property <color> dominant-tint-deep: root.is-dark ? #180D2E : #EDE9FE;
     in-out property <color> dominant-tint-subtle: root.is-dark ? #0D1426 : #E0F2FE;
 
-    // Lyrics Specific Tokens
+    // ---------------------------------------------------------------------------
+    // Lyrics Tokens (WCAG AA Compliant: Fixed Inactive Contrast & Light Mode)
+    // ---------------------------------------------------------------------------
     out property <color> lyrics-active: root.is-dark ? #FFFFFF : #0F172A;
-    out property <color> lyrics-inactive: root.is-dark ? #94A3B866 : #64748B55;
-    out property <color> lyrics-sung: root.is-dark ? #FFFFFF : #1E293B;
-    out property <color> lyrics-current-word: #38BDF8;
+    // Remediated lyrics-inactive: Solid accessible tone (7.0:1 in Dark, 6.3:1 in Light)
+    out property <color> lyrics-inactive: root.is-dark ? #94A7BD : #526173;
+    out property <color> lyrics-sung: root.is-dark ? #E2E8F0 : #1E293B;
+    out property <color> lyrics-current-word: root.is-dark ? #38BDF8 : #0369A1;
     out property <color> lyrics-ambient-glow: root.dominant-color-1;
 
+    // ---------------------------------------------------------------------------
     // Waveform Scrubber Tokens
-    out property <color> waveform-idle: root.is-dark ? #181B28 : #E2E8F0;
+    // ---------------------------------------------------------------------------
+    out property <color> waveform-idle: root.is-dark ? #263147 : #E2E8F0;
     out property <color> waveform-played: root.accent-violet;
-    out property <color> waveform-hover: #A78BFA;
-    out property <color> waveform-playhead: #FFFFFF;
+    out property <color> waveform-hover: root.is-dark ? #A78BFA : #7C3AED;
+    out property <color> waveform-playhead: root.is-dark ? #FFFFFF : #0F172A;
 
-    // Sizing
+    // ---------------------------------------------------------------------------
+    // Type Scale Tokens
+    // ---------------------------------------------------------------------------
+    out property <length> font-size-xs: 10px;      // badges, timestamps, tags
+    out property <length> font-size-sm: 12px;      // captions, table headers, metadata
+    out property <length> font-size-base: 13px;    // standard body, inputs, buttons
+    out property <length> font-size-md: 15px;      // subheaders, inactive lyrics
+    out property <length> font-size-lg: 18px;      // dialog headers, section titles
+    out property <length> font-size-xl: 20px;      // active lyric line, view headings
+    out property <length> font-size-2xl: 24px;     // hero headings, fullscreen titles
+    out property <length> font-size-3xl: 32px;     // display titles
+
+    // ---------------------------------------------------------------------------
+    // Spacing Scale Tokens (4px / 8px Baseline)
+    // ---------------------------------------------------------------------------
+    out property <length> spacing-2xs: 2px;
+    out property <length> spacing-xs: 4px;
+    out property <length> spacing-sm: 8px;
+    out property <length> spacing-base: 12px;
+    out property <length> spacing-md: 16px;
+    out property <length> spacing-lg: 24px;
+    out property <length> spacing-xl: 32px;
+    out property <length> spacing-2xl: 48px;
+
+    // ---------------------------------------------------------------------------
+    // Component Sizing Geometry
+    // ---------------------------------------------------------------------------
     out property <length> header-height: 54px;
     out property <length> player-height: 92px;
     out property <length> lyrics-panel-width: 390px;
@@ -60,11 +159,11 @@ export global Theme {
     out property <length> radius-sm: 6px;
     out property <length> radius-md: 10px;
     out property <length> radius-lg: 16px;
-    out property <length> spacing-sm: 8px;
-    out property <length> spacing-md: 16px;
-    out property <length> spacing-lg: 24px;
+    out property <length> radius-full: 9999px;
 
-    // Motion — shared durations keep every interaction feeling like one app.
+    // ---------------------------------------------------------------------------
+    // Motion Durations
+    // ---------------------------------------------------------------------------
     out property <duration> motion-snap: 80ms;
     out property <duration> motion-fast: 110ms;
     out property <duration> motion-base: 180ms;

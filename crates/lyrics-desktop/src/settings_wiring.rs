@@ -120,6 +120,7 @@ pub(crate) fn apply_settings_to_ui(window: &MainWindow, settings: &AppSettings) 
     window.set_settings_lrclib_url(settings.lrclib_base_url.clone().into());
     window.set_settings_request_interval(settings.request_interval_secs as f32);
     window.set_volume(settings.volume);
+    window.set_is_muted(settings.muted);
     let cache_idx = match settings.retry_days {
         0..=7 => 0,
         8..=14 => 1,
@@ -157,6 +158,7 @@ pub(crate) fn wire_settings_and_updates(window: &MainWindow) {
                     _ => 0,
                 },
                 volume: w.get_volume(),
+                muted: w.get_is_muted(),
                 window_width: 1280,
                 window_height: 820,
                 scan_on_startup: w.get_settings_scan_on_startup(),

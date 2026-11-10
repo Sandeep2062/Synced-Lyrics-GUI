@@ -1,5 +1,5 @@
 use crate::art_loader::ArtLoader;
-use crate::library_model::{load_library_into_ui, open_database, AppState};
+use crate::library_model::{format_time, load_library_into_ui, open_database, AppState};
 use crate::playback::{setup_track_for_playback, RodioAudioEngine, WaveformCacheMap};
 use crate::{LyricLine, LyricWord, MainWindow};
 use lyrics_core::{
@@ -60,11 +60,14 @@ pub(crate) fn sync_lyrics_to_position(
         window.set_active_line_index(active_idx);
     }
 
-    if active_idx >= 0 && (active_idx as usize) < lines.len() {
-        let line = &lines[active_idx as usize];
-        if !line.words.is_empty() {
-            let cur_word_idx = find_active_word_index(&line.words, effective_position);
-            update_ui_words(window, &line.words, cur_word_idx, effective_position);
+    if active_idx >= 0 {
+        if let Some(line) = lines.get(active_idx as usize) {
+            if !line.words.is_empty() {
+                let cur_word_idx = find_active_word_index(&line.words, effective_position);
+                update_ui_words(window, &line.words, cur_word_idx, effective_position);
+            } else if window.get_active_has_words() {
+                window.set_active_has_words(false);
+            }
         } else if window.get_active_has_words() {
             window.set_active_has_words(false);
         }
@@ -299,6 +302,12 @@ pub(crate) fn wire_lyrics_sync(
                 if let Some(line) = lines.get(line_idx as usize) {
                     let target = (line.timestamp_seconds - (offset_ms as f64 / 1000.0)).max(0.0);
                     let _ = eng.seek(target);
+                    if let Some(dur) = eng.duration_seconds() {
+                        if dur > 0.0 {
+                            w.set_seek_position((target / dur).clamp(0.0, 1.0) as f32);
+                        }
+                    }
+                    w.set_position_text(format_time(target).into());
                     w.set_active_line_index(line_idx);
                     if !line.words.is_empty() {
                         let effective_pos = (target + (offset_ms as f64 / 1000.0)).max(0.0);

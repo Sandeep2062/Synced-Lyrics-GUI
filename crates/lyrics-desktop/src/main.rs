@@ -20,7 +20,7 @@ pub(crate) use settings_wiring::*;
 mod scan_wiring;
 pub(crate) use scan_wiring::*;
 
-use lyrics_core::{load_settings, LrcLine};
+use lyrics_core::{load_settings, AudioEngine, LrcLine};
 use slint::{Model, ModelRc, VecModel};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -32,6 +32,7 @@ use std::sync::{Arc, Mutex};
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<(), slint::PlatformError> {
+    lyrics_core::setup_panic_hook();
     let window = MainWindow::new()?;
     window.show()?;
     #[allow(clippy::arc_with_non_send_sync)]
@@ -50,6 +51,13 @@ fn main() -> Result<(), slint::PlatformError> {
     // Load settings into UI
     let settings = load_settings().unwrap_or_default();
     apply_settings_to_ui(&window, &settings);
+    if let Ok(mut eng) = audio.lock() {
+        if settings.muted {
+            eng.set_volume(0.0);
+        } else {
+            eng.set_volume(settings.volume);
+        }
+    }
 
     // Load saved library immediately
     load_library_into_ui(&window, &app_state, &art_loader);
@@ -133,5 +141,8 @@ fn main() -> Result<(), slint::PlatformError> {
 mod ui_audit;
 
 #[cfg(test)]
-mod ui_snapshot;
+pub(crate) mod ui_snapshot;
+
+#[cfg(test)]
+mod headless_tests;
 

@@ -277,10 +277,17 @@ export component SettingsView inherits Rectangle {
                     ProviderCard {
                         name: "Musixmatch";
                         type-tag: "Synced + Plain";
-                        auth-tag: "Built-in Desktop Token";
-                        description: "World's largest music catalog with automated background token authentication.";
-                        checked <=> root.enable-musixmatch;
-                        toggled(v) => { root.save-settings(); }
+                        auth-tag: root.musixmatch-key != "" ? "API Key Configured" : "API Key Required";
+                        description: root.musixmatch-key != ""
+                            ? "Active with custom API key. Queries official Musixmatch API."
+                            : "Disabled: Upstream anonymous desktop token retired by Musixmatch. Enter an API key below to enable.";
+                        checked: root.musixmatch-key != "" && root.enable-musixmatch;
+                        toggled(v) => {
+                            if (root.musixmatch-key != "") {
+                                root.enable-musixmatch = v;
+                                root.save-settings();
+                            }
+                        }
                     }
 
                     ProviderCard {
@@ -295,8 +302,8 @@ export component SettingsView inherits Rectangle {
                     ProviderCard {
                         name: "Megalobiz";
                         type-tag: "Synced LRC";
-                        auth-tag: "Free Public API";
-                        description: "Dedicated community catalog of crowd-uploaded synchronized LRC files.";
+                        auth-tag: "Free Public API (v1)";
+                        description: "Official REST API delivering community-contributed timestamped synchronized LRC files.";
                         checked <=> root.enable-megalobiz;
                         toggled(v) => { root.save-settings(); }
                     }
@@ -348,10 +355,10 @@ export component SettingsView inherits Rectangle {
 
                     VerticalLayout {
                         spacing: 6px;
-                        Text { text: "Musixmatch API Key"; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "Musixmatch API Key (Required to enable Musixmatch)"; color: Theme.text-muted; font-size: 12px; }
                         TextField {
                             password: true;
-                            placeholder: "Optional — built-in desktop token is used automatically";
+                            placeholder: "Enter Musixmatch API key (anonymous desktop token retired upstream)";
                             text <=> root.musixmatch-key;
                         }
                     }
@@ -624,7 +631,7 @@ export component SettingsView inherits Rectangle {
                             border-radius: Theme.radius-sm;
                             background: upd_ta.pressed
                                 ? Theme.bg-active
-                                : (upd_ta.has-hover ? #12141C : #000000);
+                                : (upd_ta.has-hover ? Theme.bg-hover : Theme.bg-card);
                             border-width: 1px;
                             border-color: root.updates-checking
                                 ? Theme.status-suspicious

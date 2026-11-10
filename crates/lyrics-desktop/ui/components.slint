@@ -160,10 +160,10 @@ export component StatusPill inherits Rectangle {
                 border-width: 1px;
                 border-color: root.tone;
                 background:
-                    root.status == "synced" ? #0D281E :
-                    root.status == "plain" ? #0C2333 :
-                    root.status == "missing" ? #2B1117 :
-                    root.status == "suspicious" ? #2B210C : #1A1D24;
+                    root.status == "synced" ? Theme.status-synced-bg :
+                    root.status == "plain" ? Theme.status-plain-bg :
+                    root.status == "missing" ? Theme.status-missing-bg :
+                    root.status == "suspicious" ? Theme.status-suspicious-bg : Theme.bg-card;
 
                 HorizontalLayout {
                     alignment: center;
@@ -216,7 +216,7 @@ export component FilterChip inherits Rectangle {
             border-width: 1px;
             background: root.selected
                 ? Theme.accent-violet-soft
-                : (ta.pressed ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : #000000));
+                : (ta.pressed ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : Theme.bg-card));
             border-color: root.selected
                 ? Theme.accent-violet
                 : (ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft);
@@ -322,9 +322,9 @@ export component TextField inherits Rectangle {
 
     height: 34px;
     border-radius: Theme.radius-sm;
-    background: input.has-focus ? #0A0C11 : #000000;
-    border-width: 1px;
-    border-color: input.has-focus ? Theme.accent-violet : Theme.stroke-soft;
+    background: input.has-focus ? Theme.bg-surface : Theme.bg-card;
+    border-width: input.has-focus ? Theme.focus-ring-width : 1px;
+    border-color: input.has-focus ? Theme.stroke-focus : Theme.stroke-soft;
 
     animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
 
@@ -412,13 +412,13 @@ export component ToolbarButton inherits Rectangle {
             border-width: 1px;
             clip: true;
             background: root.accent
-                ? (ta.pressed ? #2C1A4A : (ta.has-hover ? #28163F : #1A1229))
-                : (ta.pressed ? Theme.bg-active : (ta.has-hover ? #12141C : #000000));
+                ? (ta.pressed ? Theme.accent-violet-active : (ta.has-hover ? Theme.accent-violet-hover : Theme.accent-violet))
+                : (ta.pressed ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : Theme.bg-card));
             border-color: root.in-progress
                 ? Theme.accent-violet
                 : (root.accent
-                    ? (ta.has-hover ? #6D3FB8 : #3C2266)
-                    : (ta.has-hover ? Theme.stroke-strong : #222636));
+                    ? (ta.has-hover ? Theme.accent-violet-hover : Theme.accent-violet)
+                    : (ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft));
 
             animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
 
@@ -475,7 +475,7 @@ export component ToolbarButton inherits Rectangle {
         y: parent.height + 6px;
         width: tt_label.preferred-width + 16px;
         height: 24px;
-        background: #141721;
+        background: Theme.bg-tooltip;
         border-radius: Theme.radius-xs;
         border-width: 1px;
         border-color: Theme.stroke-strong;

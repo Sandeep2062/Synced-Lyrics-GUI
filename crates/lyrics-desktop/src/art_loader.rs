@@ -1,6 +1,6 @@
 use crate::{AlbumData, MainWindow, TrackData};
 use image::GenericImageView;
-use lyrics_core::{ThumbnailStore, Track};
+use lyrics_core::{MutexExt, ThumbnailStore, Track};
 use slint::{Model, ModelRc, VecModel};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -139,7 +139,7 @@ impl ArtLoader {
             return;
         }
         {
-            let mut seen = self.inner.seen.lock().unwrap();
+            let mut seen = self.inner.seen.lock_ignore_poison();
             if !seen.insert((key.to_string(), stamp)) {
                 return;
             }
@@ -149,7 +149,7 @@ impl ArtLoader {
             path: path.to_string(),
             stamp,
         };
-        let mut queue = self.inner.queue.lock().unwrap();
+        let mut queue = self.inner.queue.lock_ignore_poison();
         if urgent {
             queue.push_front(job);
         } else {
@@ -162,36 +162,39 @@ impl ArtLoader {
     /// Forgets everything this loader knew about the library's artwork.
     pub(crate) fn reset_after_scan(&self) {
         lyrics_core::clear_folder_art_cache();
-        self.inner.thumbs.lock().unwrap().clear();
-        self.inner.seen.lock().unwrap().clear();
-        self.inner.queue.lock().unwrap().clear();
-        self.inner.ready.lock().unwrap().clear();
-        *self.inner.rows.lock().unwrap() = ArtRows::default();
-        *self.inner.player_album.lock().unwrap() = None;
+        self.inner.thumbs.lock_ignore_poison().clear();
+        self.inner.seen.lock_ignore_poison().clear();
+        self.inner.queue.lock_ignore_poison().clear();
+        self.inner.ready.lock_ignore_poison().clear();
+        *self.inner.rows.lock_ignore_poison() = ArtRows::default();
+        *self.inner.player_album.lock_ignore_poison() = None;
         clear_ui_image_cache();
     }
 
     pub(crate) fn thumbnail_for(&self, key: &str) -> Option<Option<Arc<Vec<u8>>>> {
-        self.inner.thumbs.lock().unwrap().get(key).cloned()
+        self.inner.thumbs.lock_ignore_poison().get(key).cloned()
     }
 
     pub(crate) fn take_ready(
         &self,
     ) -> Vec<(String, Option<slint::SharedPixelBuffer<slint::Rgb8Pixel>>)> {
-        std::mem::take(&mut *self.inner.ready.lock().unwrap())
+        std::mem::take(&mut *self.inner.ready.lock_ignore_poison())
     }
 
     pub(crate) fn next_job(&self) -> Option<ArtJob> {
-        let mut queue = self.inner.queue.lock().unwrap();
+        let mut queue = self.inner.queue.lock_ignore_poison();
         loop {
             if let Some(job) = queue.pop_front() {
                 return Some(job);
             }
-            let (guard, timeout) = self
+            let (guard, timeout) = match self
                 .inner
                 .signal
                 .wait_timeout(queue, Duration::from_millis(500))
-                .unwrap();
+            {
+                Ok(pair) => pair,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             queue = guard;
             if !timeout.timed_out() {
                 continue;
@@ -247,10 +250,9 @@ impl ArtLoader {
                     loader
                         .inner
                         .thumbs
-                        .lock()
-                        .unwrap()
+                        .lock_ignore_poison()
                         .insert(job.key.clone(), thumbnail);
-                    loader.inner.ready.lock().unwrap().push((job.key, pixels));
+                    loader.inner.ready.lock_ignore_poison().push((job.key, pixels));
                     loader.post_results(&window);
                 }
             });
@@ -258,7 +260,7 @@ impl ArtLoader {
     }
 
     pub(crate) fn remember_library(&self, tracks: &[Track]) {
-        let mut library = self.inner.library.lock().unwrap();
+        let mut library = self.inner.library.lock_ignore_poison();
         library.album_of_path.clear();
         library.tracks_by_album.clear();
         library.stamp_of_path.clear();
@@ -280,8 +282,7 @@ impl ArtLoader {
     pub(crate) fn album_of(&self, audio_path: &str) -> Option<String> {
         self.inner
             .library
-            .lock()
-            .unwrap()
+            .lock_ignore_poison()
             .album_of_path
             .get(audio_path)
             .cloned()
@@ -294,11 +295,11 @@ impl ArtLoader {
 
     pub(crate) fn album_art_with(&self, album: &str, urgent: bool) -> Option<Arc<Vec<u8>>> {
         let paths = {
-            let lib = self.inner.library.lock().unwrap();
+            let lib = self.inner.library.lock_ignore_poison();
             lib.tracks_by_album.get(album).cloned()?
         };
         {
-            let thumbs = self.inner.thumbs.lock().unwrap();
+            let thumbs = self.inner.thumbs.lock_ignore_poison();
             if let Some(art) = paths
                 .iter()
                 .find_map(|path| thumbs.get(path).cloned().flatten())
@@ -309,7 +310,7 @@ impl ArtLoader {
         if urgent {
             if let Some(store) = ThumbnailStore::default_location() {
                 let stamps = {
-                    let lib = self.inner.library.lock().unwrap();
+                    let lib = self.inner.library.lock_ignore_poison();
                     lib.stamp_of_path.clone()
                 };
                 for path in &paths {
@@ -319,8 +320,7 @@ impl ArtLoader {
                         let arc = Arc::new(bytes);
                         self.inner
                             .thumbs
-                            .lock()
-                            .unwrap()
+                            .lock_ignore_poison()
                             .insert(path.clone(), Some(arc.clone()));
                         return Some(arc);
                     }
@@ -332,21 +332,21 @@ impl ArtLoader {
 
     pub(crate) fn remember_library_rows(&self, rows: &[TrackData]) {
         let (by_path, by_album) = row_index(rows);
-        let mut art_rows = self.inner.rows.lock().unwrap();
+        let mut art_rows = self.inner.rows.lock_ignore_poison();
         art_rows.library = by_path;
         art_rows.library_by_album = by_album;
     }
 
     pub(crate) fn remember_album_detail_rows(&self, rows: &[TrackData]) {
         let (by_path, by_album) = row_index(rows);
-        let mut art_rows = self.inner.rows.lock().unwrap();
+        let mut art_rows = self.inner.rows.lock_ignore_poison();
         art_rows.album_detail = by_path;
         art_rows.album_detail_by_album = by_album;
     }
 
     pub(crate) fn remember_artist_detail_rows(&self, rows: &[TrackData]) {
         let (by_path, by_album) = row_index(rows);
-        let mut art_rows = self.inner.rows.lock().unwrap();
+        let mut art_rows = self.inner.rows.lock_ignore_poison();
         art_rows.artist_detail = by_path;
         art_rows.artist_detail_by_album = by_album;
     }
@@ -356,17 +356,17 @@ impl ArtLoader {
         for (index, row) in rows.iter().enumerate() {
             cards.entry(row.name.to_string()).or_default().push(index);
         }
-        self.inner.rows.lock().unwrap().album_cards = cards;
+        self.inner.rows.lock_ignore_poison().album_cards = cards;
     }
 
     pub(crate) fn set_player_album(&self, album: Option<String>) {
-        *self.inner.player_album.lock().unwrap() = album;
+        *self.inner.player_album.lock_ignore_poison() = album;
     }
 
     pub(crate) fn patch_rows(&self, window: &MainWindow, paths: &[String], albums: &[String]) {
         let mut work: Vec<(ArtList, String, Vec<usize>)> = Vec::new();
         {
-            let rows = self.inner.rows.lock().unwrap();
+            let rows = self.inner.rows.lock_ignore_poison();
             for path in paths {
                 if let Some(indices) = rows.library.get(path) {
                     work.push((ArtList::Library, path.clone(), indices.clone()));
@@ -409,7 +409,7 @@ impl ArtLoader {
         }
 
         let waiting = {
-            let mut player_album = self.inner.player_album.lock().unwrap();
+            let mut player_album = self.inner.player_album.lock_ignore_poison();
             let arrived = player_album
                 .as_deref()
                 .is_some_and(|album| albums.iter().any(|name| name == album));
@@ -553,8 +553,7 @@ pub(crate) fn cover_for(
                 loader
                     .inner
                     .thumbs
-                    .lock()
-                    .unwrap()
+                    .lock_ignore_poison()
                     .insert(key.to_string(), Some(arc.clone()));
                 let image = decode_cover_rgb(&*arc).map(slint::Image::from_rgb8);
                 store_cover_image(key, image.clone());

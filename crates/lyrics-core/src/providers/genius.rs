@@ -4,7 +4,23 @@ use crate::model::Track;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
 use serde::Deserialize;
+use std::sync::OnceLock;
 use std::time::Duration;
+
+static LYRICS_CONTAINER_SELECTOR: OnceLock<Option<Selector>> = OnceLock::new();
+static EXCLUDE_FROM_SELECTION_SELECTOR: OnceLock<Option<Selector>> = OnceLock::new();
+
+fn lyrics_container_selector() -> Option<&'static Selector> {
+    LYRICS_CONTAINER_SELECTOR
+        .get_or_init(|| Selector::parse("[data-lyrics-container='true']").ok())
+        .as_ref()
+}
+
+fn exclude_selector() -> Option<&'static Selector> {
+    EXCLUDE_FROM_SELECTION_SELECTOR
+        .get_or_init(|| Selector::parse("[data-exclude-from-selection='true']").ok())
+        .as_ref()
+}
 
 const API_URL: &str = "https://api.genius.com/search";
 const PUBLIC_SEARCH_URL: &str = "https://genius.com/api/search/multi";
@@ -234,16 +250,16 @@ pub struct GeniusArtist {
 
 fn extract_lyrics(page: &str) -> String {
     let document = Html::parse_document(page);
-    let Ok(selector) = Selector::parse("[data-lyrics-container='true']") else {
+    let Some(selector) = lyrics_container_selector() else {
         return String::new();
     };
-    let exclude_sel = Selector::parse("[data-exclude-from-selection='true']").ok();
+    let exclude_sel = exclude_selector();
 
     document
-        .select(&selector)
+        .select(selector)
         .filter_map(|container| {
             let mut html = container.inner_html();
-            if let Some(ref ex_sel) = exclude_sel {
+            if let Some(ex_sel) = exclude_sel {
                 for ex in container.select(ex_sel) {
                     let ex_html = ex.html();
                     html = html.replace(&ex_html, "");
@@ -274,6 +290,21 @@ fn extract_lyrics(page: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_real_fixtures() {
+        let multi_json = include_str!("../../tests/fixtures/genius/bohemian_rhapsody_search.json");
+        let payload: MultiSearchResponse = serde_json::from_str(multi_json).unwrap();
+        let sections = payload.response.unwrap().sections.unwrap();
+        let song_sec = sections.into_iter().find(|s| s.section_type.as_deref() == Some("song")).unwrap();
+        let hits = song_sec.hits.unwrap();
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].result.title.as_deref(), Some("Bohemian Rhapsody"));
+
+        let html = include_str!("../../tests/fixtures/genius/lyrics_container.html");
+        let lyrics = extract_lyrics(html);
+        assert!(!lyrics.is_empty());
+    }
 
     #[test]
     fn parses_search_response_and_lyrics_containers() {
@@ -374,5 +405,34 @@ mod tests {
         let lyrics = &result[0];
         assert!(lyrics.plain.is_some());
         assert!(!lyrics.plain.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_malformed_genius_html_and_json() {
+        // HTML without lyrics container
+        let html_no_container = "<html><body><div>No lyrics here</div></body></html>";
+        assert_eq!(extract_lyrics(html_no_container), "");
+
+        // Empty HTML
+        assert_eq!(extract_lyrics(""), "");
+
+        // Corrupted HTML with unclosed tags and nested scripts
+        let html_corrupted = "<div data-lyrics-container=\"true\"><script>var x = 1;</script>Line 1<br/>Line 2</div>";
+        let extracted = extract_lyrics(html_corrupted);
+        assert!(extracted.contains("Line 1"));
+
+        // Malformed Search JSON
+        let malformed_jsons = [
+            "{}",
+            r#"{"response": null}"#,
+            r#"{"response": {"hits": null}}"#,
+            r#"{"response": {"hits": []}}"#,
+            r#"{"response": {"sections": [{"type": "other"}]}}"#,
+        ];
+
+        for json_str in &malformed_jsons {
+            let _ = serde_json::from_str::<SearchResponse>(json_str);
+            let _ = serde_json::from_str::<MultiSearchResponse>(json_str);
+        }
     }
 }

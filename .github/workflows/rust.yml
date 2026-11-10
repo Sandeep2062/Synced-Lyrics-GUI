@@ -52,6 +52,9 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace
 
+      - name: Evaluate Golden Benchmark (Precision & Recall Gate)
+        run: cargo test -p lyrics-core --test golden_evaluation -- --nocapture
+
       - name: Build release binary
         run: cargo build --release -p lyrics-desktop
 

@@ -97,6 +97,12 @@ impl MusixmatchProvider {
             .filter(|t| !t.trim().is_empty())
             .ok_or_else(|| ProviderError::Parse("Missing user_token in response".to_string()))?;
 
+        if token.chars().all(|c| c == '0') {
+            return Err(ProviderError::Request(
+                "Musixmatch anonymous desktop API has been deprecated upstream. Please enter an API key in Settings.".to_string(),
+            ));
+        }
+
         if let Ok(mut guard) = self.token_cache.lock() {
             // Expire token after 9 minutes (official TTL is 10)
             *guard = Some((token.clone(), Instant::now() + Duration::from_secs(540)));
@@ -449,6 +455,22 @@ mod tests {
     }
 
     #[test]
+    fn parses_token_fixture_and_detects_zero_token() {
+        let fixture = include_str!("../../tests/fixtures/musixmatch/token_get.json");
+        let payload: TokenResponse = serde_json::from_str(fixture).unwrap();
+        let token = payload.message.unwrap().body.unwrap().user_token.unwrap();
+        assert!(token.chars().all(|c| c == '0'));
+    }
+
+    #[test]
+    fn parses_track_search_fixture() {
+        let fixture = include_str!("../../tests/fixtures/musixmatch/track_search.json");
+        let payload: DesktopSearchResponse = serde_json::from_str(fixture).unwrap();
+        let list = payload.message.unwrap().body.unwrap().track_list.unwrap();
+        assert!(!list.is_empty());
+    }
+
+    #[test]
     fn parses_desktop_search_multiple_tracks() {
         let payload: DesktopSearchResponse = serde_json::from_str(
             r#"{
@@ -492,5 +514,32 @@ mod tests {
         let t2 = list[1].track.as_ref().unwrap();
         assert_eq!(t2.track_id, Some(102));
         assert_eq!(t2.track_name.as_deref(), Some("Second Track"));
+    }
+
+    #[test]
+    fn test_malformed_musixmatch_json() {
+        let malformed = [
+            "{}",
+            r#"{"message": null}"#,
+            r#"{"message": {"header": {"status_code": 404}}}"#,
+            r#"{"message": {"header": {"status_code": 401}}}"#,
+            r#"{"message": {"body": null}}"#,
+            r#"{"message": {"body": {"subtitle": null, "lyrics": null}}}"#,
+            r#"{"message": {"body": {"track_list": []}}}"#,
+            r#"{"message": {"body": {"track_list": [{"track": null}]}}}"#,
+        ];
+
+        for json_str in &malformed {
+            let _ = serde_json::from_str::<ApiResponse>(json_str);
+            let _ = serde_json::from_str::<TokenResponse>(json_str);
+            let _ = serde_json::from_str::<DesktopSearchResponse>(json_str);
+        }
+
+        // Test strip_timestamps on malformed inputs
+        assert_eq!(strip_timestamps(""), "");
+        assert_eq!(strip_timestamps("no timestamp line"), "no timestamp line");
+        assert_eq!(strip_timestamps("[incomplete\n[00:01.00]Valid"), "[incomplete\nValid");
+        assert_eq!(strip_timestamps("[00:01][00:02]Multiple"), "Multiple");
+        assert_eq!(strip_timestamps("[\u{1F525}]Emoji\n\u{3000}"), "Emoji");
     }
 }

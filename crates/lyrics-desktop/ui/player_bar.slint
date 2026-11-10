@@ -12,6 +12,7 @@ export component PlayerBar inherits Rectangle {
     in-out property <string> playback-icon: "▶";
     in-out property <float> seek-position: 0.0;
     in-out property <float> volume: 0.7;
+    in-out property <bool> is-muted: false;
     in-out property <bool> is-playing: false;
     in-out property <bool> has-track: false;
     in-out property <bool> has-lyrics: false;
@@ -29,6 +30,7 @@ export component PlayerBar inherits Rectangle {
     callback prev-track();
     callback next-track();
     callback volume-changed(float);
+    callback toggle-mute();
     callback toggle-lyrics();
     callback toggle-queue();
     callback toggle-mini-player();
@@ -136,7 +138,8 @@ export component PlayerBar inherits Rectangle {
                     icon: @image-url("../assets/skip_prev.svg");
                     button-size: 32px;
                     icon-size: 16px;
-                    icon-hover-color: #FFFFFF;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: Theme.text-primary;
                     enabled: root.has-track;
                     clicked => { root.prev-track(); }
                 }
@@ -144,25 +147,22 @@ export component PlayerBar inherits Rectangle {
                 IconButton {
                     icon: @image-url("../assets/rewind10.svg");
                     button-size: 32px;
-                    icon-size: 19px;
-                    icon-hover-color: #FFFFFF;
+                    icon-size: 18px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: Theme.text-primary;
                     enabled: root.has-track;
                     clicked => { root.rewind(); }
                 }
 
-                // Play / Pause disc (44px wide, Theme.accent-violet, exactly centered)
+                // Play / Pause disc (44px wide, Theme.accent-violet, optically centered)
                 Rectangle {
                     width: 44px;
                     height: 44px;
                     border-radius: 22px;
                     border-width: 1px;
                     opacity: root.has-track ? 1 : 0.55;
-                    background: root.is-playing
-                        ? (pp_ta.pressed ? #6D28D9 : (pp_ta.has-hover ? #9D72FF : Theme.accent-violet))
-                        : (pp_ta.pressed ? #232838 : (pp_ta.has-hover ? #282E42 : #1D2130));
-                    border-color: root.is-playing
-                        ? (pp_ta.has-hover ? #D6C2FF : #B892FF)
-                        : (pp_ta.has-hover ? #4A5478 : #363E56);
+                    background: pp_ta.pressed ? Theme.accent-violet-active : (pp_ta.has-hover ? Theme.accent-violet-hover : Theme.accent-violet);
+                    border-color: pp_ta.has-hover ? Theme.focus-ring-color : Theme.accent-violet-strong;
 
                     animate background, border-color, opacity {
                         duration: Theme.motion-base;
@@ -175,8 +175,8 @@ export component PlayerBar inherits Rectangle {
                             : @image-url("../assets/play.svg");
                         width: 18px;
                         height: 18px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                        x: (parent.width - self.width) / 2 + (root.is-playing ? 0px : 1.5px);
+                        y: (parent.height - self.height) / 2;
                         colorize: #FFFFFF;
                     }
 
@@ -190,8 +190,9 @@ export component PlayerBar inherits Rectangle {
                 IconButton {
                     icon: @image-url("../assets/forward10.svg");
                     button-size: 32px;
-                    icon-size: 19px;
-                    icon-hover-color: #FFFFFF;
+                    icon-size: 18px;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: Theme.text-primary;
                     enabled: root.has-track;
                     clicked => { root.forward(); }
                 }
@@ -200,7 +201,8 @@ export component PlayerBar inherits Rectangle {
                     icon: @image-url("../assets/skip_next.svg");
                     button-size: 32px;
                     icon-size: 16px;
-                    icon-hover-color: #FFFFFF;
+                    icon-color: Theme.text-muted;
+                    icon-hover-color: Theme.text-primary;
                     enabled: root.has-track;
                     clicked => { root.next-track(); }
                 }
@@ -354,17 +356,31 @@ export component PlayerBar inherits Rectangle {
                     alignment: center;
                     spacing: 6px;
 
-                    Image {
-                        source: @image-url("../assets/volume.svg");
-                        width: 17px;
-                        height: 17px;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
                         y: (parent.height - self.height) / 2;
-                        colorize: root.volume <= 0.001 ? Theme.text-dim : Theme.text-muted;
+
+                        Image {
+                            source: (root.is-muted || root.volume <= 0.001)
+                                ? @image-url("../assets/volume_mute.svg")
+                                : @image-url("../assets/volume.svg");
+                            width: 17px;
+                            height: 17px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            colorize: (root.is-muted || root.volume <= 0.001) ? #EF4444 : Theme.text-muted;
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-mute(); }
+                        }
                     }
 
                     VolumeSlider {
                         width: 80px;
-                        value: root.volume;
+                        value: root.is-muted ? 0.0 : root.volume;
                         changed(v) => { root.volume-changed(v); }
                     }
                 }
@@ -428,6 +444,19 @@ export component PlayerBar inherits Rectangle {
                         mouse-cursor: pointer;
                         clicked => { root.toggle-lyrics(); }
                     }
+                }
+            }
+
+            // Mini Player Trigger
+            if root.has-track: VerticalLayout {
+                alignment: center;
+
+                IconButton {
+                    icon: @image-url("../assets/mini_player.svg");
+                    button-size: 32px;
+                    icon-size: 15px;
+                    icon-color: Theme.text-muted;
+                    clicked => { root.toggle-mini-player(); }
                 }
             }
 

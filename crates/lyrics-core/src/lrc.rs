@@ -383,12 +383,13 @@ pub fn audit_lrc(
     }
 
     if let Some(duration) = duration_seconds.filter(|duration| *duration > 0.0) {
-        let last = *timestamps.last().unwrap();
-        if last > duration + PAST_END_TOLERANCE {
-            issues.push(LrcIssue::TooLong);
-        }
-        if last < duration * EARLY_END_RATIO && duration - last > EARLY_END_GAP {
-            issues.push(LrcIssue::EndsTooEarly);
+        if let Some(&last) = timestamps.last() {
+            if last > duration + PAST_END_TOLERANCE {
+                issues.push(LrcIssue::TooLong);
+            }
+            if last < duration * EARLY_END_RATIO && duration - last > EARLY_END_GAP {
+                issues.push(LrcIssue::EndsTooEarly);
+            }
         }
     }
 
@@ -647,8 +648,7 @@ pub fn apply_offset_tag(text: &str, offset_seconds: f64) -> String {
 
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("[offset:") && trimmed.ends_with(']') {
-            let inner = trimmed[8..trimmed.len() - 1].trim();
+        if let Some(inner) = trimmed.strip_prefix("[offset:").and_then(|s| s.strip_suffix(']')) {
             let clean = inner.replace(' ', "");
             let current_ms = clean.parse::<i64>().unwrap_or(0);
             let new_ms = current_ms + delta_ms;
@@ -731,14 +731,14 @@ fn clean_lyrics_text(text: &str) -> String {
     let mut result = String::new();
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.contains(':') {
-            let inner = &trimmed[1..trimmed.len() - 1];
-            if inner.starts_with("ar:")
-                || inner.starts_with("ti:")
-                || inner.starts_with("al:")
-                || inner.starts_with("by:")
-                || inner.starts_with("offset:")
-                || inner.starts_with("length:")
+        if let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            if inner.contains(':')
+                && (inner.starts_with("ar:")
+                    || inner.starts_with("ti:")
+                    || inner.starts_with("al:")
+                    || inner.starts_with("by:")
+                    || inner.starts_with("offset:")
+                    || inner.starts_with("length:"))
             {
                 continue;
             }
@@ -1343,5 +1343,76 @@ mod tests {
                 "Binary search must match linear scan exactly at t={t}s"
             );
         }
+    }
+
+    #[test]
+    fn test_malformed_lrc_lines_never_panic() {
+        let malformed_inputs = [
+            "",
+            "\n\n\r\n",
+            "[",
+            "]",
+            "[]",
+            "[:]",
+            "[::]",
+            "[00]",
+            "[00:00",
+            "00:00]",
+            "[aa:bb]",
+            "[--:--.--]",
+            "[999999999999999999999999999999999:00]",
+            "[-01:00.00]",
+            "[00:60.00]",
+            "[00:00.9999999999999999999999999999999999999999999999999]",
+            "[00:00.00.00]",
+            "[00:00:00]",
+            "[00:00] [01:00] [invalid] text",
+            "[[00:01.00]] text",
+            "[00:01.00] \u{0} null byte \u{feff} BOM",
+            "[\u{1F3B5}:\u{1F525}] emoji timestamps",
+            "<\u{3000}> fullwidth space <00:01.00> test",
+            "[ar: \u{0} artist\n[ti: \u{feff} title",
+            "[offset: invalid_number]",
+            "[offset: -99999999999999999999999999999999999999999999999999999]",
+            "[offset: +99999999999999999999999999999999999999999999999999999]",
+            "[offset:]",
+            "[offset:   ]",
+            "   [offset: 500] leading whitespace",
+            "\u{3000}\u{3000}[offset: 300] unicode spaces",
+            "<00:01.00 <00:02.00> incomplete tags <>",
+            "<<>>",
+            "<invalid> word <99:99.99> word 2",
+        ];
+
+        for input in &malformed_inputs {
+            let lines = parse_lines(input);
+            let timestamps = parse_timestamps(input);
+            let metadata = parse_metadata(input);
+            let audit = audit_lrc(input, Some(180.0), "Song Title", &[]);
+            let offset_tagged = apply_offset_tag(input, 1.5);
+            let rewritten = rewrite_timestamps_with_offset(input, -1.0);
+
+            // Ensure no operations panicked and produced safe strings
+            assert!(lines.len() <= timestamps.len() + 10);
+            let _ = metadata;
+            let _ = audit;
+            let _ = offset_tagged;
+            let _ = rewritten;
+        }
+    }
+
+    #[test]
+    fn test_malformed_offset_tag_edge_cases() {
+        // Tag with no number
+        let res = apply_offset_tag("[offset: ]\n[00:01.00] test", 0.5);
+        assert!(res.contains("[offset: 500]"));
+
+        // Multiple brackets on line
+        let res2 = apply_offset_tag("[offset: 100] [ar: Artist]\n[00:01.00] test", 0.2);
+        assert!(!res2.is_empty());
+
+        // Line with unicode before offset
+        let res3 = apply_offset_tag("　[offset: 100]\n[00:01.00] test", 0.2);
+        assert!(!res3.is_empty());
     }
 }

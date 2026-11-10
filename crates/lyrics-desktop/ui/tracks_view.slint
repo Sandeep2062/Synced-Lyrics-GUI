@@ -84,7 +84,7 @@ export component TracksView inherits Rectangle {
             // Summary pill
             if root.summary != "": Rectangle {
                 height: 26px;
-                background: #000000;
+                background: Theme.bg-card;
                 border-radius: 13px;
                 border-width: 1px;
                 border-color: Theme.stroke-soft;
@@ -108,7 +108,7 @@ export component TracksView inherits Rectangle {
         // Table Header
         Rectangle {
             height: 28px;
-            background: #000000;
+            background: Theme.bg-surface;
             border-radius: Theme.radius-sm;
 
             HorizontalLayout {
@@ -175,7 +175,7 @@ export component TracksView inherits Rectangle {
                 height: 30px;
                 x: (parent.width - self.width) / 2;
                 border-radius: 15px;
-                background: clear_ta.has-hover ? Theme.accent-violet-soft : #000000;
+                background: clear_ta.has-hover ? Theme.accent-violet-soft : Theme.bg-card;
                 border-width: 1px;
                 border-color: clear_ta.has-hover ? Theme.accent-violet : Theme.stroke-soft;
                 animate background, border-color { duration: Theme.motion-fast; easing: ease-out; }
@@ -239,7 +239,7 @@ export component TracksView inherits Rectangle {
                 border-radius: Theme.radius-sm;
                 background: row_ta.pressed
                     ? Theme.bg-active
-                    : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? #000000 : transparent));
+                    : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? Theme.bg-card : transparent));
                 animate background { duration: Theme.motion-fast; easing: ease-out; }
 
                 // Declared before the content so the row-sized hit area sits *behind*

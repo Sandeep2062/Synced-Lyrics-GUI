@@ -51,7 +51,7 @@ export component BatchDownloadDialog inherits Rectangle {
     callback pause-resume();
     callback stop();
 
-    background: #000000E6;
+    background: Theme.is-dark ? #000000B0 : #0F172A60;
 
     // Swallow clicks outside card so background window cannot be interacted with
     TouchArea {
@@ -64,7 +64,7 @@ export component BatchDownloadDialog inherits Rectangle {
         height: min(560px, parent.height - 32px);
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        background: #06070A;
+        background: Theme.bg-dialog;
         border-radius: Theme.radius-lg;
         border-width: 1px;
         border-color: Theme.stroke-strong;

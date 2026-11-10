@@ -1,0 +1,120 @@
+{
+  "query": {
+    "title": "Bohemian Rhapsody",
+    "artist": "Queen",
+    "duration": 354
+  },
+  "count": 10,
+  "results": [
+    {
+      "id": 56215,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 355.99,
+      "duration_diff": 1.99,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/56215/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/56215?format=lrc"
+    },
+    {
+      "id": 43850,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 354.86,
+      "duration_diff": 0.86,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/43850/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/43850?format=lrc"
+    },
+    {
+      "id": 93472,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 355.79,
+      "duration_diff": 1.79,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/93472/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/93472?format=lrc"
+    },
+    {
+      "id": 54940,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 354.98,
+      "duration_diff": 0.98,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/54940/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/54940?format=lrc"
+    },
+    {
+      "id": 93360,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 355.79,
+      "duration_diff": 1.79,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/93360/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/93360?format=lrc"
+    },
+    {
+      "id": 164282,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 354.35,
+      "duration_diff": 0.35,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/164282/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/164282?format=lrc"
+    },
+    {
+      "id": 179775,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 355.49,
+      "duration_diff": 1.49,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/179775/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/179775?format=lrc"
+    },
+    {
+      "id": 241504,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 354.96,
+      "duration_diff": 0.96,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/241504/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/241504?format=lrc"
+    },
+    {
+      "id": 249725,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 354.96,
+      "duration_diff": 0.96,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/249725/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/249725?format=lrc"
+    },
+    {
+      "id": 289317,
+      "title": "Bohemian Rhapsody",
+      "artist": "Queen",
+      "duration": 354.96,
+      "duration_diff": 0.96,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/289317/bohemian-rhapsody",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/289317?format=lrc"
+    }
+  ]
+}

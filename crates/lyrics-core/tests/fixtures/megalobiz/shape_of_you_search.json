@@ -1,0 +1,120 @@
+{
+  "query": {
+    "title": "Shape of You",
+    "artist": "Ed Sheeran",
+    "duration": 233
+  },
+  "count": 10,
+  "results": [
+    {
+      "id": 75397,
+      "title": "Shape of You",
+      "artist": "Ed Sheeran",
+      "duration": 233.74,
+      "duration_diff": 0.74,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/75397/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/75397?format=lrc"
+    },
+    {
+      "id": 9355,
+      "title": "Shape Of You",
+      "artist": "Ed Sheeran",
+      "duration": 235,
+      "duration_diff": 2,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/9355/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/9355?format=lrc"
+    },
+    {
+      "id": 27198,
+      "title": "Shape of you",
+      "artist": "Ed Sheeran",
+      "duration": 233.8,
+      "duration_diff": 0.8,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/27198/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/27198?format=lrc"
+    },
+    {
+      "id": 7110,
+      "title": "Shape of You",
+      "artist": "Ed Sheeran",
+      "duration": 233.77,
+      "duration_diff": 0.77,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/7110/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/7110?format=lrc"
+    },
+    {
+      "id": 8343,
+      "title": "Shape of you",
+      "artist": "Ed Sheeran",
+      "duration": 233.77,
+      "duration_diff": 0.77,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/8343/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/8343?format=lrc"
+    },
+    {
+      "id": 9625,
+      "title": "Shape of you",
+      "artist": "Ed Sheeran",
+      "duration": 233.74,
+      "duration_diff": 0.74,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/9625/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/9625?format=lrc"
+    },
+    {
+      "id": 34818,
+      "title": "Shape Of You",
+      "artist": "Ed Sheeran",
+      "duration": 233.75,
+      "duration_diff": 0.75,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/34818/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/34818?format=lrc"
+    },
+    {
+      "id": 731,
+      "title": "Shape of You",
+      "artist": "Ed Sheeran",
+      "duration": 235.13,
+      "duration_diff": 2.13,
+      "sync": "manual",
+      "score": 0.94,
+      "url": "https://megalobiz.com/lrc/731/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/731?format=lrc"
+    },
+    {
+      "id": 71296,
+      "title": "Shape of You",
+      "artist": "Ed Sheeran",
+      "duration": 235.02,
+      "duration_diff": 2.02,
+      "sync": "manual",
+      "score": 0.94,
+      "url": "https://megalobiz.com/lrc/71296/shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/71296?format=lrc"
+    },
+    {
+      "id": 260444,
+      "title": "Ed-Sheeran-Shape-of-You",
+      "artist": "Ed Sheeran",
+      "duration": 233.74,
+      "duration_diff": 0.74,
+      "sync": "manual",
+      "score": 0.934,
+      "url": "https://megalobiz.com/lrc/260444/ed-sheeran-shape-of-you",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/260444?format=lrc"
+    }
+  ]
+}

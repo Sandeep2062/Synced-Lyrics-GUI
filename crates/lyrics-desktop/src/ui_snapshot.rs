@@ -24,9 +24,11 @@ use slint::platform::software_renderer::{
 use slint::platform::{Platform, PlatformError, WindowAdapter};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 const WIDTH: u32 = 1280;
@@ -38,14 +40,41 @@ thread_local! {
     static WINDOW: RefCell<Option<Rc<MinimalSoftwareWindow>>> = const { RefCell::new(None) };
 }
 
-fn window() -> Rc<MinimalSoftwareWindow> {
-    WINDOW.with(|w| w.borrow().clone().expect("window not initialized"))
+pub(crate) fn window() -> Rc<MinimalSoftwareWindow> {
+    WINDOW.with(|w| {
+        let mut b = w.borrow_mut();
+        if b.is_none() {
+            *b = Some(MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer));
+        }
+        b.as_ref().unwrap().clone()
+    })
 }
 
 /// Virtual "time since start" so animation frames can be sampled deterministically.
 static NOW_MS: AtomicU64 = AtomicU64::new(0);
 
-struct SnapshotPlatform;
+static EVENT_QUEUE: Mutex<VecDeque<Box<dyn FnOnce() + Send>>> = Mutex::new(VecDeque::new());
+
+#[derive(Clone)]
+struct TestEventLoopProxy;
+
+impl slint::platform::EventLoopProxy for TestEventLoopProxy {
+    fn quit_event_loop(&self) -> Result<(), slint::EventLoopError> {
+        Ok(())
+    }
+
+    fn invoke_from_event_loop(
+        &self,
+        event: Box<dyn FnOnce() + Send>,
+    ) -> Result<(), slint::EventLoopError> {
+        if let Ok(mut q) = EVENT_QUEUE.lock() {
+            q.push_back(event);
+        }
+        Ok(())
+    }
+}
+
+pub(crate) struct SnapshotPlatform;
 
 impl Platform for SnapshotPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
@@ -55,14 +84,43 @@ impl Platform for SnapshotPlatform {
     fn duration_since_start(&self) -> Duration {
         Duration::from_millis(NOW_MS.load(Ordering::Relaxed))
     }
+
+    fn new_event_loop_proxy(&self) -> Option<Box<dyn slint::platform::EventLoopProxy>> {
+        Some(Box::new(TestEventLoopProxy))
+    }
+}
+
+pub(crate) fn ensure_test_platform() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let _ = slint::platform::set_platform(Box::new(SnapshotPlatform));
+    });
+}
+
+pub(crate) fn drain_events() {
+    loop {
+        let ev = {
+            let mut q = match EVENT_QUEUE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            q.pop_front()
+        };
+        match ev {
+            Some(f) => f(),
+            None => break,
+        }
+    }
 }
 
 /// Advances the virtual clock so running animations reach (or approach) their
-/// target value before the next capture.
-fn settle(ms: u64) {
+/// target value before the next capture, and drains queued event loop tasks.
+pub(crate) fn settle(ms: u64) {
+    drain_events();
     NOW_MS.fetch_add(ms, Ordering::Relaxed);
     for _ in 0..4 {
         slint::platform::update_timers_and_animations();
+        drain_events();
     }
 }
 
@@ -129,11 +187,48 @@ fn capture_sized(name: &str, width: u32, height: u32, report: &mut Report) -> Fr
     frame
 }
 
+pub(crate) fn save_frame_png(name: &str, width: u32, height: u32) {
+    let window = window();
+    window.set_size(slint::PhysicalSize::new(width, height));
+    window.dispatch_event(slint::platform::WindowEvent::Resized {
+        size: slint::LogicalSize::new(width as f32, height as f32),
+    });
+    window.request_redraw();
+    settle(300);
+    slint::platform::update_timers_and_animations();
+    let opaque_black = PremultipliedRgbaColor {
+        red: 0,
+        green: 0,
+        blue: 0,
+        alpha: 255,
+    };
+    let mut buffer = vec![opaque_black; (width * height) as usize];
+    slint::platform::update_timers_and_animations();
+    let rendered = window.draw_if_needed(|renderer| {
+        renderer.render(&mut buffer, width as usize);
+    });
+    if rendered {
+        let mut img = image::RgbaImage::new(width, height);
+        for (i, px) in buffer.iter().enumerate() {
+            img.put_pixel(
+                (i as u32) % width,
+                (i as u32) / width,
+                image::Rgba([px.red, px.green, px.blue, 255]),
+            );
+        }
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("{name}.png"));
+        let _ = img.save(&path);
+        println!("wrote {}", path.display());
+    }
+}
+
 fn capture(name: &str, report: &mut Report) -> Frame {
     capture_sized(name, WIDTH, HEIGHT, report)
 }
 
-fn worst_case_tracks(count: usize) -> Vec<TrackData> {
+pub(crate) fn worst_case_tracks(count: usize) -> Vec<TrackData> {
     let templates: [(&str, &str, &str, &str, &str); 4] = [
         (
             // Exactly 90 chars: CJK + Emoji + Multilingual stress title
@@ -313,7 +408,7 @@ fn sample_artists() -> Vec<ArtistData> {
     worst_case_artists()
 }
 
-fn worst_case_lyrics() -> Vec<LyricLine> {
+pub(crate) fn worst_case_lyrics() -> Vec<LyricLine> {
     [
         "🎵 [00:00] 誰が袖に咲く幻花 ただそこに咲く幻花 殘響散歌 鬼滅の刃 遊郭編 90-Chars Title Line 1234",
         "ॐ [00:04] रेशम फिरिरी रेशम फिरिरी उडेर जाउँ कि डाँडामा भञ्ज्याङ रेशम फिरिरी आधुनिक नेपाली धुन",
@@ -477,11 +572,7 @@ fn worst_case_batch_logs() -> Vec<BatchLogEntry> {
 /// caller capture screenshots. Only call this once per test binary.
 fn with_app(time_ms: u64, f: impl FnOnce(&MainWindow)) {
     NOW_MS.store(time_ms, Ordering::Relaxed);
-    WINDOW.with(|w| {
-        *w.borrow_mut() = Some(MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer));
-    });
-    slint::platform::set_platform(Box::new(SnapshotPlatform))
-        .expect("set software-renderer platform");
+    ensure_test_platform();
 
     let ui = MainWindow::new().expect("create MainWindow");
     ui.set_tracks(ModelRc::new(VecModel::from(worst_case_tracks(10_000))));

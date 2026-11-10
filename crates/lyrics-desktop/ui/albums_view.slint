@@ -84,7 +84,7 @@ component AlbumCard inherits Rectangle {
             Rectangle {
                 height: 20px;
                 border-radius: 10px;
-                background: #000000;
+                background: Theme.bg-card;
                 border-width: 1px;
                 border-color: root.album.synced-count == root.album.track-count
                     ? Theme.status-synced
@@ -214,7 +214,7 @@ export component AlbumsView inherits Rectangle {
                 Rectangle {
                     width: 130px;
                     height: 34px;
-                    background: back_ta.pressed ? Theme.bg-active : (back_ta.has-hover ? #1B1E2C : Theme.bg-card);
+                    background: back_ta.pressed ? Theme.bg-active : (back_ta.has-hover ? Theme.bg-hover : Theme.bg-card);
                     border-radius: Theme.radius-sm;
                     border-width: 1px;
                     border-color: back_ta.has-hover ? Theme.stroke-strong : Theme.stroke-soft;
@@ -233,7 +233,7 @@ export component AlbumsView inherits Rectangle {
                     border-radius: 17px;
                     background: dl_ta.pressed
                         ? Theme.accent-violet-strong
-                        : (dl_ta.has-hover ? #9D72FF : Theme.accent-violet);
+                        : (dl_ta.has-hover ? Theme.accent-violet-hover : Theme.accent-violet);
                     animate background { duration: Theme.motion-fast; easing: ease-out; }
 
                     HorizontalLayout {
@@ -314,7 +314,7 @@ export component AlbumsView inherits Rectangle {
                     border-radius: Theme.radius-sm;
                     background: row_ta.pressed
                         ? Theme.bg-active
-                        : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? #000000 : transparent));
+                        : (row_ta.has-hover ? Theme.bg-hover : (Math.mod(idx, 2) == 0 ? Theme.bg-card : transparent));
                     animate background { duration: Theme.motion-fast; easing: ease-out; }
 
                     // Declared before the content so the row-sized hit area sits

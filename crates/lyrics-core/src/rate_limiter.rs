@@ -1,6 +1,8 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::MutexExt;
+
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     pub requests_per_minute: u32,
@@ -58,7 +60,7 @@ impl AdaptiveRateLimiter {
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
                 return false;
             }
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock_ignore_poison();
             let now = Instant::now();
 
             // prune old timestamps
@@ -115,7 +117,7 @@ impl AdaptiveRateLimiter {
     }
 
     pub fn penalize(&self, retry_after: Option<Duration>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock_ignore_poison();
         if let Some(dur) = retry_after {
             state.next_slot = Instant::now() + dur;
             state.current_interval = dur.min(self.config.max_backoff);
@@ -126,7 +128,7 @@ impl AdaptiveRateLimiter {
     }
 
     pub fn relax(&self) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock_ignore_poison();
         let current_secs = state.current_interval.as_secs_f64();
         let new_secs = current_secs * 0.9;
         let mut new_interval = Duration::from_secs_f64(new_secs);
@@ -140,7 +142,7 @@ impl AdaptiveRateLimiter {
         if self.config.requests_per_day == 0 {
             return true;
         }
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock_ignore_poison();
         let now = Instant::now();
         if now >= state.daily_reset {
             state.daily_count = 0;
@@ -174,13 +176,13 @@ mod tests {
         let limiter = AdaptiveRateLimiter::new(config.clone());
         limiter.penalize(None);
         {
-            let state = limiter.state.lock().unwrap();
+            let state = limiter.state.lock_ignore_poison();
             assert_eq!(state.current_interval, Duration::from_millis(1000));
         }
 
         limiter.relax();
         {
-            let state = limiter.state.lock().unwrap();
+            let state = limiter.state.lock_ignore_poison();
             assert_eq!(state.current_interval, Duration::from_millis(900));
         }
     }

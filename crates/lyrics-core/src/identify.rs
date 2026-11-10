@@ -168,6 +168,17 @@ pub fn parse_filename(path_or_filename: &str) -> Option<ParsedFilename> {
                     track_number: num.or(track_number),
                     pattern: FilenamePattern::TrackNumArtistTitle,
                 });
+            } else if is_bracketed_noise(parts.last().unwrap())
+                || is_suffix_noise_str(parts.last().unwrap())
+            {
+                // E.g. "Artist - Title - Remastered" or "Artist - Title - 2011 Remastered"
+                return Some(ParsedFilename {
+                    artist: Some(parts[0].to_string()),
+                    album: None,
+                    title: clean_title(parts[1]),
+                    track_number,
+                    pattern: FilenamePattern::ArtistTitle,
+                });
             } else {
                 // E.g. "Artist - Album - Title"
                 return Some(ParsedFilename {
@@ -197,6 +208,26 @@ pub fn parse_filename(path_or_filename: &str) -> Option<ParsedFilename> {
     })
 }
 
+fn is_bracket_noise_prefix(lower: &str, prefix: &str) -> bool {
+    if lower == prefix {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix(prefix) {
+        if rest.starts_with(' ')
+            || rest.starts_with('-')
+            || rest.starts_with('.')
+            || rest.starts_with('_')
+            || rest.starts_with('/')
+        {
+            return true;
+        }
+        if prefix == "remaster" || prefix == "prod" || prefix == "feat" || prefix == "edit" {
+            return true;
+        }
+    }
+    false
+}
+
 fn is_bracketed_noise(s: &str) -> bool {
     let lower = s.to_ascii_lowercase();
     let noise_prefixes = [
@@ -214,6 +245,13 @@ fn is_bracketed_noise(s: &str) -> bool {
         "version",
         "mix",
         "edit",
+        "radio",
+        "bonus",
+        "single",
+        "album",
+        "extended",
+        "original",
+        "anniversary",
         "instrumental",
         "acoustic",
         "mono",
@@ -230,7 +268,56 @@ fn is_bracketed_noise(s: &str) -> bool {
     is_year
         || noise_prefixes
             .iter()
-            .any(|&p| lower.starts_with(p) || lower == p)
+            .any(|&p| is_bracket_noise_prefix(&lower, p))
+}
+
+fn is_suffix_noise_str(s: &str) -> bool {
+    let lower = s.trim().to_ascii_lowercase();
+    let noise_words = [
+        "remaster",
+        "remastered",
+        "live",
+        "radio edit",
+        "radio",
+        "bonus",
+        "single version",
+        "single",
+        "album version",
+        "official",
+        "instrumental",
+        "acoustic",
+        "edit",
+        "mix",
+        "deluxe",
+    ];
+    let is_year = lower.len() == 4
+        && lower.chars().all(|c| c.is_ascii_digit())
+        && (lower.starts_with("19") || lower.starts_with("20"));
+    let parts: Vec<&str> = lower.split_whitespace().collect();
+    let is_year_remaster = parts.len() == 2
+        && ((parts[0].len() == 4
+            && (parts[0].starts_with("19") || parts[0].starts_with("20"))
+            && parts[1].starts_with("remaster"))
+            || (parts[0].starts_with("remaster")
+                && parts[1].len() == 4
+                && (parts[1].starts_with("19") || parts[1].starts_with("20"))));
+
+    is_year
+        || is_year_remaster
+        || noise_words
+            .iter()
+            .any(|&nw| lower == nw || lower.starts_with(nw) || lower.ends_with(nw))
+}
+
+fn has_leading_track_number(s: &str) -> bool {
+    let trimmed = s.trim();
+    if let Some(idx) = trimmed.find(|c: char| !c.is_ascii_digit()) {
+        if idx > 0 {
+            let tail = &trimmed[idx..];
+            return tail.starts_with(". ") || tail.starts_with(" - ") || tail.starts_with(".) ");
+        }
+    }
+    false
 }
 
 /// Check whether a track needs identification based on its current metadata and file status.
@@ -244,8 +331,9 @@ pub fn track_needs_identification(track: &Track) -> bool {
         || track.title.eq_ignore_ascii_case("Unknown");
 
     let title_looks_like_file = is_filename_like(&track.title, &track.audio_path);
+    let title_has_track_prefix = has_leading_track_number(&track.title);
 
-    artist_empty || title_empty || title_looks_like_file
+    artist_empty || title_empty || title_looks_like_file || title_has_track_prefix
 }
 
 fn is_filename_like(title: &str, audio_path: &str) -> bool {
@@ -755,5 +843,42 @@ mod tests {
         assert_eq!(tag.album().as_deref(), Some("Pablo Honey"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_malformed_filename_and_tag_parsing() {
+        let malformed_stems = [
+            "",
+            "   ",
+            " - ",
+            " - - ",
+            "01",
+            "01.",
+            "01 - ",
+            "01 - - ",
+            "()",
+            "[]",
+            "(()))",
+            "[[[]]",
+            "Title ()",
+            "Title []",
+            "(Artist) - ",
+            " - (Title)",
+            "Special characters: !@#$%^&*()_+~`|}{[]:;?><,./",
+            "Turkish dotless / dotted: İstanbul - DİYARBAKIR (İ REMASTERED)",
+            "German: Straße - GROẞE FREIHEIT (feat. X)",
+            "Emoji: 🎵🔥 - ॐ नमो भगवते (Prod By 🔥)",
+            "\u{0}\u{feff} - \u{200b}",
+        ];
+
+        for stem in &malformed_stems {
+            let res = parse_filename(stem);
+            let _ = res;
+        }
+
+        // Test clean_title with multibyte and noise cases
+        assert!(!clean_title("İstanbul (Remastered 2020)").is_empty());
+        assert!(!clean_title("GROẞE FREIHEIT feat. Artist").is_empty());
+        assert_eq!(clean_title(""), "");
     }
 }

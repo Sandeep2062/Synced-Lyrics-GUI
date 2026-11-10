@@ -81,8 +81,10 @@ pub(crate) fn providers_for_settings(
         ProviderName::Lrclib,
         LrclibProvider::new(&settings.lrclib_base_url)
     );
+    // Musixmatch: upstream retired anonymous desktop tokens; only query Musixmatch
+    // if enabled AND a personal API key has been configured in Settings.
     add_provider!(
-        settings.musixmatch_enabled,
+        settings.musixmatch_enabled && !settings.musixmatch_api_key.trim().is_empty(),
         "Musixmatch",
         ProviderName::Musixmatch,
         MusixmatchProvider::new(settings.musixmatch_api_key.clone())

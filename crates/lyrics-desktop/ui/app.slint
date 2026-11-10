@@ -21,6 +21,7 @@ export { TrackData, AlbumData, ArtistData, LyricLine, LyricWord, BatchLogEntry, 
 export component MainWindow inherits Window {
     title: "Synced Lyrics";
     icon: @image-url("../assets/icon.png");
+    default-font-family: Theme.font-family;
     preferred-width: 1280px;
     preferred-height: 820px;
     min-width: 960px;
@@ -88,6 +89,34 @@ export component MainWindow inherits Window {
                 }
             }
 
+            // Escape key: exit fullscreen now-playing, mini player, or close side panels
+            if event.text == Key.Escape {
+                if root.now-playing-visible {
+                    root.now-playing-visible = false;
+                    return EventResult.accept;
+                }
+                if root.mini-player-mode {
+                    root.mini-player-mode = false;
+                    return EventResult.accept;
+                }
+                if root.lyrics-visible {
+                    root.lyrics-visible = false;
+                    return EventResult.accept;
+                }
+                if root.queue-visible {
+                    root.queue-visible = false;
+                    return EventResult.accept;
+                }
+            }
+
+            // Fullscreen Now Playing toggle
+            if event.text == "f" || event.text == "F" {
+                if root.has-track {
+                    root.now-playing-visible = !root.now-playing-visible;
+                    return EventResult.accept;
+                }
+            }
+
             // Global player keyboard navigation
             if event.text == " " {
                 root.play-pause();
@@ -109,6 +138,14 @@ export component MainWindow inherits Window {
                 root.volume-changed(Math.max(0.0, root.volume - 0.05));
                 return EventResult.accept;
             }
+            if event.text == "m" || event.text == "M" {
+                root.toggle-mute();
+                return EventResult.accept;
+            }
+            if event.text == "p" || event.text == "P" {
+                root.mini-player-mode = !root.mini-player-mode;
+                return EventResult.accept;
+            }
             if event.text == "l" || event.text == "L" {
                 if root.has-track && root.has-lyrics {
                     root.lyrics-visible = !root.lyrics-visible;
@@ -125,8 +162,12 @@ export component MainWindow inherits Window {
                 }
                 return EventResult.accept;
             }
-            if event.text == "m" || event.text == "M" {
-                root.mini-player-mode = !root.mini-player-mode;
+            if event.text == "<" || event.text == "," {
+                root.prev-track();
+                return EventResult.accept;
+            }
+            if event.text == ">" || event.text == "." {
+                root.next-track();
                 return EventResult.accept;
             }
 
@@ -150,6 +191,7 @@ export component MainWindow inherits Window {
     in-out property <string> playback-icon: "▶";
     in-out property <float> seek-position: 0.0;
     in-out property <float> volume: 0.7;
+    in-out property <bool> is-muted: false;
     in-out property <bool> is-playing: false;
     in-out property <bool> has-track: false;
     in-out property <bool> has-lyrics: false;
@@ -164,6 +206,7 @@ export component MainWindow inherits Window {
     callback prev-track();
     callback next-track();
     callback volume-changed(float);
+    callback toggle-mute();
     callback play-queue-track(int);
     
     // Lyrics Panel properties
@@ -590,12 +633,15 @@ export component MainWindow inherits Window {
                 duration-text: root.duration-text;
                 waveform-data: root.waveform-data;
                 volume: root.volume;
+                is-muted: root.is-muted;
                 active-line-index: root.active-line-index;
                 lines: root.lyrics-lines;
                 plain-text: root.lyrics-plain-text;
                 active-has-words: root.active-has-words;
                 active-words-row1: root.active-words-row1;
                 active-words-row2: root.active-words-row2;
+                lyrics-offset-ms: root.lyrics-offset-ms;
+                offset-save-status: root.lyrics-offset-save-status;
 
                 close => { root.now-playing-visible = false; }
                 play-pause => { root.play-pause(); }
@@ -605,9 +651,13 @@ export component MainWindow inherits Window {
                 prev-track => { root.prev-track(); }
                 next-track => { root.next-track(); }
                 volume-changed(val) => { root.volume-changed(val); }
+                toggle-mute => { root.toggle-mute(); }
                 seek-to-line(idx) => { root.seek-to-line(idx); }
                 fetch-lyrics => { root.fetch-current-lyrics(); }
                 toggle-queue => { root.queue-visible = !root.queue-visible; }
+                adjust-offset(delta) => { root.adjust-lyrics-offset(delta); }
+                set-offset(val) => { root.set-lyrics-offset(val); }
+                write-offset-to-file => { root.write-lyrics-offset-to-file(); }
             }
         }
         
@@ -620,6 +670,7 @@ export component MainWindow inherits Window {
             playback-icon: root.playback-icon;
             seek-position: root.seek-position;
             volume: root.volume;
+            is-muted: root.is-muted;
             is-playing: root.is-playing;
             has-track: root.has-track;
             has-lyrics: root.has-lyrics;
@@ -637,6 +688,7 @@ export component MainWindow inherits Window {
             prev-track => { root.prev-track(); }
             next-track => { root.next-track(); }
             volume-changed(val) => { root.volume-changed(val); }
+            toggle-mute => { root.toggle-mute(); }
             toggle-lyrics => {
                 root.lyrics-visible = !root.lyrics-visible;
                 if root.lyrics-visible {

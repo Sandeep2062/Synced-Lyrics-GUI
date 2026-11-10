@@ -14,7 +14,7 @@ export struct LyricLine {
 }
 
 export component SideLyricsPanel inherits Rectangle {
-    background: #000000;
+    background: Theme.bg-panel;
 
     in-out property <bool> is-open: false;
     in-out property <int> active-line-index: -1;
@@ -615,7 +615,7 @@ export component SideLyricsPanel inherits Rectangle {
                             alignment: start;
                             for word in root.active-words-row1: Text {
                                 text: word.text;
-                                color: word.is-current ? #38BDF8 : (word.is-sung ? #FFFFFF : #64748B);
+                                color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : Theme.lyrics-inactive);
                                 font-size: 19px;
                                 font-weight: word.is-sung ? 700 : 500;
                                 vertical-alignment: center;
@@ -628,7 +628,7 @@ export component SideLyricsPanel inherits Rectangle {
                             alignment: start;
                             for word in root.active-words-row2: Text {
                                 text: word.text;
-                                color: word.is-current ? #38BDF8 : (word.is-sung ? #FFFFFF : #64748B);
+                                color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : Theme.lyrics-inactive);
                                 font-size: 19px;
                                 font-weight: word.is-sung ? 700 : 500;
                                 vertical-alignment: center;
@@ -647,9 +647,9 @@ export component SideLyricsPanel inherits Rectangle {
                         Text {
                             text: line.text;
                             color: idx == root.active-line-index
-                                ? #FFFFFF
-                                : (line_ta.has-hover ? #DCE3EE
-                                : (idx < root.active-line-index ? Theme.text-dim : Theme.text-muted));
+                                ? Theme.lyrics-active
+                                : (line_ta.has-hover ? Theme.text-primary
+                                : Theme.lyrics-inactive);
                             font-size: idx == root.active-line-index ? 19px : 15px;
                             font-weight: idx == root.active-line-index ? 700 : 500;
                             wrap: word-wrap;
@@ -679,14 +679,14 @@ export component SideLyricsPanel inherits Rectangle {
                 y: 0;
                 width: 100%;
                 height: 24px;
-                background: @linear-gradient(180deg, #000000ff 0%, #00000000 100%);
+                background: @linear-gradient(180deg, Theme.bg-panel 0%, transparent 100%);
             }
 
             if root.lines.length > 0: Rectangle {
                 y: parent.height - self.height;
                 width: 100%;
                 height: 24px;
-                background: @linear-gradient(0deg, #000000ff 0%, #00000000 100%);
+                background: @linear-gradient(0deg, Theme.bg-panel 0%, transparent 100%);
             }
 
             // Sync to Playback Floating Button
@@ -863,7 +863,7 @@ export component SideLyricsPanel inherits Rectangle {
                     padding: 16px;
                     Text {
                         text: root.plain-text;
-                        color: #CBD5E1;
+                        color: Theme.text-primary;
                         font-size: 13px;
                         wrap: word-wrap;
                     }

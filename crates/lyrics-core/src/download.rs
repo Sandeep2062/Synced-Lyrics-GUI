@@ -11,6 +11,8 @@ use std::thread;
 use std::time::Duration;
 use thiserror::Error;
 
+use crate::MutexExt;
+
 pub const DEFAULT_MATCH_THRESHOLD: f64 = 0.75;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -230,7 +232,7 @@ pub fn download_track_with_options(
                     break;
                 }
                 let idx = {
-                    let mut q = queue.lock().unwrap();
+                    let mut q = queue.lock_ignore_poison();
                     match q.pop_front() {
                         Some(i) => i,
                         None => break,
@@ -275,7 +277,7 @@ pub fn download_track_with_options(
                     }
                 }
 
-                provider_results.lock().unwrap().push((idx, res));
+                provider_results.lock_ignore_poison().push((idx, res));
             });
         }
         drop(tx);
@@ -292,7 +294,7 @@ pub fn download_track_with_options(
 
     // 2. Gather all candidates
     let mut raw_candidates = Vec::new();
-    let results = provider_results.lock().unwrap();
+    let results = provider_results.lock_ignore_poison();
     for (_idx, res) in results.iter() {
         if let Ok(cands) = res {
             for c in cands {
@@ -323,11 +325,9 @@ pub fn download_track_with_options(
     // 4. Timing agreement and ranking
     let scored_candidates = evaluate_and_rank_candidates(track, passing_candidates);
 
-    if scored_candidates.is_empty() {
+    let Some(best) = scored_candidates.first().cloned() else {
         return Ok(DownloadOutcome::NotFound);
-    }
-
-    let best = scored_candidates.first().cloned().unwrap();
+    };
 
     // Emit selection explanation event
     if let Some(ref reason) = best.selection_reason {
@@ -551,7 +551,7 @@ fn compute_line_density(line_count: usize, duration_seconds: Option<f64>) -> f64
     }
 }
 
-fn evaluate_and_rank_candidates(track: &Track, candidates: Vec<Candidate>) -> Vec<ScoredCandidate> {
+pub fn evaluate_and_rank_candidates(track: &Track, candidates: Vec<Candidate>) -> Vec<ScoredCandidate> {
     let mut parsed_synced_lines: HashMap<usize, Vec<LrcLine>> = HashMap::new();
     for (i, cand) in candidates.iter().enumerate() {
         if let Some(ref text) = cand.synced {
@@ -570,8 +570,9 @@ fn evaluate_and_rank_candidates(track: &Track, candidates: Vec<Candidate>) -> Ve
         for j in (i + 1)..synced_indices.len() {
             let idx_a = synced_indices[i];
             let idx_b = synced_indices[j];
-            let lines_a = &parsed_synced_lines[&idx_a];
-            let lines_b = &parsed_synced_lines[&idx_b];
+            let (Some(lines_a), Some(lines_b)) = (parsed_synced_lines.get(&idx_a), parsed_synced_lines.get(&idx_b)) else {
+                continue;
+            };
             if let Some(diff) = align_and_compare_timing(lines_a, lines_b) {
                 if diff <= 1.5 {
                     agreements[idx_a] += 1;
@@ -764,7 +765,7 @@ mod tests {
         }
 
         fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
-            let mut attempts = self.attempts.lock().unwrap();
+            let mut attempts = self.attempts.lock_ignore_poison();
             *attempts += 1;
             if *attempts == 1 {
                 Err(ProviderError::Request("temporary failure".to_string()))

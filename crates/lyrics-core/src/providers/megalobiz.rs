@@ -2,29 +2,51 @@ use super::{LyricsProvider, ProviderError, ProviderName};
 use crate::matching::Candidate;
 use crate::model::Track;
 use reqwest::blocking::Client;
-use scraper::{Html, Selector};
+use serde::Deserialize;
 use std::time::Duration;
 
-const SEARCH_URL: &str = "https://www.megalobiz.com/search/all";
+const SEARCH_URL: &str = "https://api.megalobiz.com/api/public/v1/search";
+const LRC_BASE_URL: &str = "https://api.megalobiz.com/api/public/v1/lrc";
 const TOP_N: usize = 3;
 
 pub struct MegalobizProvider {
     client: Client,
+    search_url: String,
+    lrc_base_url: String,
 }
 
 impl MegalobizProvider {
     pub fn new() -> Result<Self, ProviderError> {
         let client = Client::builder()
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(6))
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .timeout(Duration::from_secs(10))
+            .user_agent(concat!("SyncedLyricsGUI/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            search_url: SEARCH_URL.to_string(),
+            lrc_base_url: LRC_BASE_URL.to_string(),
+        })
     }
 
     pub fn from_client(client: Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            search_url: SEARCH_URL.to_string(),
+            lrc_base_url: LRC_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_urls(
+        client: Client,
+        search_url: impl Into<String>,
+        lrc_base_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            client,
+            search_url: search_url.into(),
+            lrc_base_url: lrc_base_url.into(),
+        }
     }
 }
 
@@ -34,79 +56,84 @@ impl LyricsProvider for MegalobizProvider {
     }
 
     fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
-        let query = format!("{} {}", track.artist, track.title);
-        let resp = self
-            .client
-            .get(SEARCH_URL)
-            .query(&[
-                ("qry", query.trim()),
-                ("searchButton.x", "0"),
-                ("searchButton.y", "0"),
-            ])
+        let has_title_artist = !track.title.trim().is_empty() && !track.artist.trim().is_empty();
+        let duration_str = track.duration_seconds.map(|d| format!("{:.0}", d));
+
+        let mut req = self.client.get(&self.search_url);
+        if has_title_artist {
+            req = req.query(&[
+                ("title", track.title.trim()),
+                ("artist", track.artist.trim()),
+            ]);
+            if let Some(dur) = &duration_str {
+                req = req.query(&[("duration", dur.as_str())]);
+            }
+        } else {
+            let q = format!("{} {}", track.artist, track.title);
+            req = req.query(&[("q", q.trim())]);
+            if let Some(dur) = &duration_str {
+                req = req.query(&[("duration", dur.as_str())]);
+            }
+        }
+
+        let resp = req
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
         if resp.status().as_u16() == 429 {
             return Err(ProviderError::RateLimited {
-                retry_after_seconds: None,
+                retry_after_seconds: parse_retry_after(resp.headers()),
             });
         }
+        if resp.status().as_u16() == 404 {
+            return Ok(Vec::new());
+        }
+        if !resp.status().is_success() {
+            return Err(ProviderError::Request(format!(
+                "Megalobiz search returned HTTP {}",
+                resp.status()
+            )));
+        }
 
-        let html_text = resp
-            .text()
+        let search_data = resp
+            .json::<MegalobizSearchResponse>()
             .map_err(|e| ProviderError::Parse(e.to_string()))?;
-        let document = Html::parse_document(&html_text);
 
-        let link_selector = Selector::parse(".entity_name a").unwrap();
-        let links: Vec<_> = document.select(&link_selector).take(TOP_N).collect();
+        let Some(results) = search_data.results else {
+            return Ok(Vec::new());
+        };
 
         let mut candidates = Vec::new();
-        for link in links {
-            let Some(href) = link.value().attr("href") else {
-                continue;
-            };
-
-            let link_text = link.text().collect::<Vec<_>>().join(" ").trim().to_string();
-            let (cand_title, cand_artist) = if let Some((left, right)) = link_text.split_once(" - ")
-            {
-                (right.trim().to_string(), left.trim().to_string())
-            } else if !link_text.is_empty() {
-                (link_text, track.artist.clone())
-            } else {
-                (track.title.clone(), track.artist.clone())
-            };
-
-            let detail_url = format!("https://www.megalobiz.com{}", href);
-            let detail_resp = match self.client.get(&detail_url).send() {
-                Ok(resp) => resp,
+        for item in results.into_iter().take(TOP_N) {
+            let lrc_endpoint = format!("{}/{}", self.lrc_base_url.trim_end_matches('/'), item.id);
+            let lrc_resp = match self.client.get(&lrc_endpoint).send() {
+                Ok(r) => r,
                 Err(_) => continue,
             };
 
-            if detail_resp.status().as_u16() == 429 {
+            if lrc_resp.status().as_u16() == 429 {
                 return Err(ProviderError::RateLimited {
-                    retry_after_seconds: None,
+                    retry_after_seconds: parse_retry_after(lrc_resp.headers()),
                 });
             }
+            if !lrc_resp.status().is_success() {
+                continue;
+            }
 
-            let Ok(detail_html) = detail_resp.text() else {
+            let Ok(lrc_data) = lrc_resp.json::<MegalobizLrcResponse>() else {
                 continue;
             };
-            let detail_doc = Html::parse_document(&detail_html);
 
-            let lrc_selector = Selector::parse("span.lyrics_details").unwrap();
-            if let Some(lrc) = detail_doc.select(&lrc_selector).next() {
-                let text = lrc.text().collect::<Vec<_>>().join("");
-                if !text.trim().is_empty() {
-                    candidates.push(Candidate {
-                        title: cand_title,
-                        artist: cand_artist,
-                        album: None,
-                        duration_seconds: None,
-                        synced: Some(text),
-                        plain: None,
-                        provider: ProviderName::Megalobiz,
-                    });
-                }
+            if let Some(lrc_text) = lrc_data.lrc.filter(|t| !t.trim().is_empty()) {
+                candidates.push(Candidate {
+                    title: item.title.or(lrc_data.title).unwrap_or_else(|| track.title.clone()),
+                    artist: item.artist.or(lrc_data.artist).unwrap_or_else(|| track.artist.clone()),
+                    album: None,
+                    duration_seconds: item.duration.or(lrc_data.duration),
+                    synced: Some(lrc_text),
+                    plain: None,
+                    provider: ProviderName::Megalobiz,
+                });
             }
         }
 
@@ -114,29 +141,78 @@ impl LyricsProvider for MegalobizProvider {
     }
 }
 
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MegalobizSearchResponse {
+    #[serde(default)]
+    pub count: Option<usize>,
+    #[serde(default)]
+    pub results: Option<Vec<MegalobizSearchResult>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MegalobizSearchResult {
+    pub id: u64,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub artist: Option<String>,
+    #[serde(default)]
+    pub duration: Option<f64>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub lrc_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MegalobizLrcResponse {
+    #[serde(default)]
+    pub id: Option<u64>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub artist: Option<String>,
+    #[serde(default)]
+    pub duration: Option<f64>,
+    #[serde(default)]
+    pub lrc: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_megalobiz_parsing() {
-        let html_text = r#"
-            <html>
-                <body>
-                    <div class="entity_name">
-                        <a href="/lyrics/something">Artist - Title</a>
-                    </div>
-                    <div class="entity_name">
-                        <a href="/lyrics/second">Another Artist - Second Title</a>
-                    </div>
-                </body>
-            </html>
-        "#;
-        let document = Html::parse_document(html_text);
-        let link_selector = Selector::parse(".entity_name a").unwrap();
-        let links: Vec<_> = document.select(&link_selector).collect();
-        assert_eq!(links.len(), 2);
-        assert_eq!(links[0].value().attr("href"), Some("/lyrics/something"));
-        assert_eq!(links[1].value().attr("href"), Some("/lyrics/second"));
+    fn parses_megalobiz_search_and_lrc_fixtures() {
+        let search_json = include_str!("../../tests/fixtures/megalobiz/bohemian_rhapsody_search.json");
+        let search_res: MegalobizSearchResponse = serde_json::from_str(search_json).unwrap();
+        assert_eq!(search_res.count, Some(10));
+        let results = search_res.results.unwrap();
+        assert_eq!(results.len(), 10);
+        assert_eq!(results[0].id, 56215);
+        assert_eq!(results[0].title.as_deref(), Some("Bohemian Rhapsody"));
+        assert_eq!(results[0].artist.as_deref(), Some("Queen"));
+
+        let lrc_json = include_str!("../../tests/fixtures/megalobiz/bohemian_rhapsody_lrc.json");
+        let lrc_res: MegalobizLrcResponse = serde_json::from_str(lrc_json).unwrap();
+        assert_eq!(lrc_res.id, Some(56215));
+        let lrc = lrc_res.lrc.unwrap();
+        assert!(lrc.contains("[00:00.26]Is this the real life?"));
+    }
+
+    #[test]
+    fn handles_empty_or_malformed_json() {
+        let malformed = ["{}", r#"{"results": []}"#, r#"{"count": 0, "results": null}"#];
+        for s in malformed {
+            let res = serde_json::from_str::<MegalobizSearchResponse>(s);
+            assert!(res.is_ok());
+        }
     }
 }

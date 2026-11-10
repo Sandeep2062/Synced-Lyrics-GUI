@@ -1,0 +1,119 @@
+{
+  "query": {
+    "title": "Hotel California",
+    "artist": "Eagles",
+    "duration": 391
+  },
+  "count": 10,
+  "results": [
+    {
+      "id": 24519,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 391.55,
+      "duration_diff": 0.55,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/24519/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/24519?format=lrc"
+    },
+    {
+      "id": 110554,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 390.32,
+      "duration_diff": 0.68,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/110554/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/110554?format=lrc"
+    },
+    {
+      "id": 95915,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 391.39,
+      "duration_diff": 0.39,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/95915/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/95915?format=lrc"
+    },
+    {
+      "id": 150533,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 390.3,
+      "duration_diff": 0.7,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/150533/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/150533?format=lrc"
+    },
+    {
+      "id": 179369,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 391.44,
+      "duration_diff": 0.44,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/179369/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/179369?format=lrc"
+    },
+    {
+      "id": 122469,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": null,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/122469/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/122469?format=lrc"
+    },
+    {
+      "id": 292350,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 391.39,
+      "duration_diff": 0.39,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/292350/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/292350?format=lrc"
+    },
+    {
+      "id": 304922,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 391.86,
+      "duration_diff": 0.86,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/304922/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/304922?format=lrc"
+    },
+    {
+      "id": 307960,
+      "title": "Hotel California",
+      "artist": "Eagles",
+      "duration": 391.38,
+      "duration_diff": 0.38,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/307960/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/307960?format=lrc"
+    },
+    {
+      "id": 237214,
+      "title": "Hotel California",
+      "artist": "Eagle's",
+      "duration": 390.38,
+      "duration_diff": 0.62,
+      "sync": "manual",
+      "score": 1,
+      "url": "https://megalobiz.com/lrc/237214/hotel-california",
+      "lrc_url": "https://api.megalobiz.com/api/public/v1/lrc/237214?format=lrc"
+    }
+  ]
+}

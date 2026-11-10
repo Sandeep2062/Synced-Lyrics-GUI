@@ -7,6 +7,8 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::MutexExt;
+
 pub fn extract_cover_art(path: &Path) -> Option<Vec<u8>> {
     let probe = Probe::open(path).ok()?;
     let probe = match probe.guess_file_type() {
@@ -288,7 +290,7 @@ fn cover_file_for(directory: &Path, audio_path: &Path) -> Option<PathBuf> {
             };
             score(&b_stem).cmp(&score(&a_stem))
         });
-        return Some(matching_candidates[0].clone());
+        return matching_candidates.first().copied().cloned();
     }
 
     // 4. An image named after the folder
@@ -556,7 +558,7 @@ impl ArtCache {
     pub fn get(&self, audio_path: &Path) -> Option<Vec<u8>> {
         let key = self.generate_key(audio_path);
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_ignore_poison();
 
         if inner.negative.contains(&key) {
             return None;
@@ -593,7 +595,7 @@ impl ArtCache {
         let key = self.generate_key(audio_path);
 
         if let Some(art) = extract_cover_art(audio_path) {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock_ignore_poison();
 
             let disk_path = self.cache_dir.join(format!("{}_master.png", key));
             fs::write(disk_path, &art).ok();
@@ -609,7 +611,7 @@ impl ArtCache {
 
             Some(art)
         } else {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock_ignore_poison();
             inner.negative.insert(key);
             None
         }
@@ -854,7 +856,7 @@ mod tests {
         let key = cache.generate_key(path);
 
         {
-            let mut inner = cache.inner.lock().unwrap();
+            let mut inner = cache.inner.lock_ignore_poison();
             inner.memory.insert(key.clone(), vec![1, 2, 3]);
             inner.access_order.push(key.clone());
         }

@@ -5,7 +5,7 @@ use crate::lyrics_sync::*;
 use crate::MainWindow;
 use lofty::prelude::AudioFile;
 use lyrics_core::{
-    find_active_line_index, find_active_word_index, AudioEngine, Track,
+    find_active_line_index, find_active_word_index, AudioEngine, MutexExt, Track,
     WaveformStore, LrcLine,
 };
 use rodio::Source;
@@ -285,7 +285,7 @@ pub(crate) fn setup_track_for_playback(
     let path = track.audio_path.clone();
 
     let cached_envelope = {
-        let cache = waveform_cache.lock().unwrap();
+        let cache = waveform_cache.lock_ignore_poison();
         cache.get(&path).cloned()
     };
 
@@ -377,8 +377,10 @@ pub(crate) fn prefetch_next_track(app_state: &Arc<Mutex<AppState>>, waveform_cac
             Some(cur) => (cur + 1) % s.filtered_tracks.len(),
             None => 0,
         };
-        let track_idx = s.filtered_tracks[next_row];
-        s.all_tracks.get(track_idx).cloned()
+        s.filtered_tracks
+            .get(next_row)
+            .and_then(|&idx| s.all_tracks.get(idx))
+            .cloned()
     };
     if let Some(track) = next_track {
         prefetch_track_waveform(&track, waveform_cache);
@@ -407,8 +409,10 @@ pub(crate) fn play_next_track(
             None => 0,
         };
         s.current_filtered_row = Some(next_row);
-        let track_idx = s.filtered_tracks[next_row];
-        s.all_tracks.get(track_idx).cloned()
+        s.filtered_tracks
+            .get(next_row)
+            .and_then(|&idx| s.all_tracks.get(idx))
+            .cloned()
     };
 
     if let Some(track) = next_track_opt {
@@ -453,8 +457,10 @@ pub(crate) fn play_prev_track(
             None => 0,
         };
         s.current_filtered_row = Some(prev_row);
-        let track_idx = s.filtered_tracks[prev_row];
-        s.all_tracks.get(track_idx).cloned()
+        s.filtered_tracks
+            .get(prev_row)
+            .and_then(|&idx| s.all_tracks.get(idx))
+            .cloned()
     };
 
     if let Some(track) = prev_track_opt {
@@ -651,16 +657,21 @@ pub(crate) fn wire_transport_controls(
                 None
             };
             if let (Some(target_pos), Some(w)) = (target_opt, weak.upgrade()) {
+                w.set_seek_position(fraction);
+                w.set_position_text(format_time(target_pos).into());
                 let offset_ms = w.get_lyrics_offset_ms() as i64;
                 let effective_pos = (target_pos + (offset_ms as f64 / 1000.0)).max(0.0);
                 if let Ok(lines) = lyrics.lock() {
                     let active_idx = find_active_line_index(&lines, effective_pos);
                     w.set_active_line_index(active_idx);
-                    if active_idx >= 0 && (active_idx as usize) < lines.len() {
-                        let line = &lines[active_idx as usize];
-                        if !line.words.is_empty() {
-                            let cur_word = find_active_word_index(&line.words, effective_pos);
-                            update_ui_words(&w, &line.words, cur_word, effective_pos);
+                    if active_idx >= 0 {
+                        if let Some(line) = lines.get(active_idx as usize) {
+                            if !line.words.is_empty() {
+                                let cur_word = find_active_word_index(&line.words, effective_pos);
+                                update_ui_words(&w, &line.words, cur_word, effective_pos);
+                            } else if w.get_active_has_words() {
+                                w.set_active_has_words(false);
+                            }
                         } else if w.get_active_has_words() {
                             w.set_active_has_words(false);
                         }
@@ -720,9 +731,53 @@ pub(crate) fn wire_transport_controls(
     }
     {
         let engine = Arc::clone(audio);
+        let weak = window.as_weak();
         window.on_volume_changed(move |vol| {
+            let Some(w) = weak.upgrade() else { return };
+            let vol_clamped = vol.clamp(0.0, 1.0);
+            w.set_volume(vol_clamped);
+            if vol_clamped > 0.001 && w.get_is_muted() {
+                w.set_is_muted(false);
+            }
             if let Ok(mut eng) = engine.lock() {
-                eng.set_volume(vol);
+                if !w.get_is_muted() {
+                    eng.set_volume(vol_clamped);
+                }
+            }
+            if let Ok(mut settings) = lyrics_core::load_settings() {
+                settings.volume = vol_clamped;
+                settings.muted = w.get_is_muted();
+                let _ = lyrics_core::save_settings(&settings);
+            }
+        });
+    }
+    {
+        let engine = Arc::clone(audio);
+        let weak = window.as_weak();
+        window.on_toggle_mute(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let currently_muted = w.get_is_muted();
+            let new_muted = !currently_muted;
+            w.set_is_muted(new_muted);
+
+            let vol = w.get_volume();
+            let effective_vol = if new_muted {
+                0.0
+            } else if vol <= 0.001 {
+                w.set_volume(0.5);
+                0.5
+            } else {
+                vol
+            };
+
+            if let Ok(mut eng) = engine.lock() {
+                eng.set_volume(effective_vol);
+            }
+
+            if let Ok(mut settings) = lyrics_core::load_settings() {
+                settings.muted = new_muted;
+                settings.volume = w.get_volume();
+                let _ = lyrics_core::save_settings(&settings);
             }
         });
     }

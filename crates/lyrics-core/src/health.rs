@@ -61,8 +61,18 @@ pub struct HealthStats {
 }
 
 pub fn parse_offset_from_reason(reason: &str) -> Option<i64> {
-    // Looks for patterns like "Offset: +1.50s", "Offset: -0.80s", or "offset 1200ms"
-    if let Some(pos) = reason.find("Offset: ") {
+    // Looks for patterns like "Offset: +1.50s", "Offset: -0.80s", or "Adjust offset (+1.50s)"
+    let lower = reason.to_ascii_lowercase();
+    if let Some(pos) = lower.find("offset: ") {
+        let rest = &reason[pos + 8..];
+        let num_str: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '+' || *c == '-')
+            .collect();
+        if let Ok(sec) = num_str.parse::<f64>() {
+            return Some((sec * 1000.0).round() as i64);
+        }
+    } else if let Some(pos) = lower.find("offset (") {
         let rest = &reason[pos + 8..];
         let num_str: String = rest
             .chars()
@@ -202,11 +212,14 @@ pub fn apply_offset_to_lrc(lrc_text: &str, offset_ms: i64) -> String {
     let mut found = false;
 
     for line in lines.iter_mut() {
-        if line.trim_start().starts_with("[offset:") {
-            if let Some(close) = line.find(']') {
-                let existing_val: i64 = line[8..close].trim().parse().unwrap_or(0);
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("[offset:") {
+            if let Some(close) = rest.find(']') {
+                let inner = &rest[..close];
+                let existing_val: i64 = inner.trim().parse().unwrap_or(0);
                 let new_val = existing_val + offset_ms;
-                *line = format!("[offset: {}]{}", new_val, &line[close + 1..]);
+                let remainder = &rest[close + 1..];
+                *line = format!("[offset: {}]{}", new_val, remainder);
                 found = true;
                 break;
             }
@@ -228,6 +241,7 @@ mod tests {
     fn test_parse_offset_from_reason() {
         assert_eq!(parse_offset_from_reason("Offset: +1.50s"), Some(1500));
         assert_eq!(parse_offset_from_reason("Offset: -0.80s"), Some(-800));
+        assert_eq!(parse_offset_from_reason("Adjust offset (+0.50s)"), Some(500));
         assert_eq!(
             parse_offset_from_reason("Words or lines out of order"),
             None
@@ -289,5 +303,28 @@ mod tests {
         let existing_offset = "[offset: 200]\n[00:10.00]Hello world";
         let adjusted2 = apply_offset_to_lrc(existing_offset, 300);
         assert!(adjusted2.starts_with("[offset: 500]"));
+    }
+
+    #[test]
+    fn test_apply_offset_to_lrc_malformed_and_whitespace() {
+        // Leading spaces
+        let lrc = "    [offset: 200]\n[00:01.00] test";
+        let res = apply_offset_to_lrc(lrc, 100);
+        assert!(res.contains("[offset: 300]"));
+
+        // Leading unicode fullwidth space
+        let lrc_unicode = "　　[offset: -50]\n[00:01.00] test";
+        let res2 = apply_offset_to_lrc(lrc_unicode, 100);
+        assert!(res2.contains("[offset: 50]"));
+
+        // Malformed offset with no number
+        let lrc_empty_num = "[offset: ]\n[00:01.00] test";
+        let res3 = apply_offset_to_lrc(lrc_empty_num, 250);
+        assert!(res3.contains("[offset: 250]"));
+
+        // Malformed without closing bracket
+        let lrc_unclosed = "[offset: 100";
+        let res4 = apply_offset_to_lrc(lrc_unclosed, 50);
+        assert!(res4.starts_with("[offset: 50]"));
     }
 }

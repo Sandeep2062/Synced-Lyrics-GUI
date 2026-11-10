@@ -208,6 +208,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parses_real_fixture() {
+        let fixture = include_str!("../../tests/fixtures/lrclib/bohemian_rhapsody.json");
+        let payload: LrclibRecord = serde_json::from_str(fixture).unwrap();
+        assert_eq!(payload.track_name.as_deref(), Some("Bohemian Rhapsody"));
+        assert_eq!(payload.artist_name.as_deref(), Some("Queen"));
+        assert!(payload.synced_lyrics.is_some());
+    }
+
+    #[test]
     fn parses_synced_and_plain_fields() {
         let payload: LrclibRecord = serde_json::from_str(
             r#"{"trackName":"Hello Song","artistName":"Hello Artist","albumName":"Hello Album","duration":200.0,"syncedLyrics":"[00:01]hello","plainLyrics":"hello","instrumental":false}"#,
@@ -288,5 +297,46 @@ mod tests {
         assert_eq!(cands[0].synced.as_deref(), Some("[00:01]line1"));
         assert_eq!(cands[1].title, "Song 2");
         assert_eq!(cands[1].plain.as_deref(), Some("plain lyrics"));
+    }
+
+    #[test]
+    fn test_malformed_lrclib_json() {
+        let malformed = [
+            "{}",
+            "[]",
+            r#"{"trackName": null, "artistName": null}"#,
+            r#"[{"trackName": 123}]"#,
+            r#"[{"trackName": "Song", "syncedLyrics": null, "plainLyrics": null}]"#,
+            r#"[{"trackName": "Song", "instrumental": true}]"#,
+            r#"{"error": "Not found"}"#,
+            "not a json",
+        ];
+
+        let track = Track {
+            audio_path: "test.mp3".to_string(),
+            lrc_path: "test.lrc".to_string(),
+            artist: "Artist".to_string(),
+            title: "Title".to_string(),
+            album: "".to_string(),
+            duration_seconds: None,
+            status: crate::model::LyricsStatus::Missing,
+            mtime: None,
+            last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
+        };
+
+        for json_str in &malformed {
+            let single: Result<LrclibRecord, _> = serde_json::from_str(json_str);
+            if let Ok(rec) = single {
+                let _ = parse_record(rec, &track);
+            }
+            let array: Result<Vec<LrclibRecord>, _> = serde_json::from_str(json_str);
+            if let Ok(records) = array {
+                for rec in records {
+                    let _ = parse_record(rec, &track);
+                }
+            }
+        }
     }
 }

@@ -132,10 +132,10 @@ export component AppHeader inherits Rectangle {
                 height: 36px;
                 border-radius: Theme.radius-sm;
                 background: root.active-tab == i
-                    ? #000000
-                    : (tab_ta.pressed ? Theme.bg-active : (tab_ta.has-hover ? #101218 : transparent));
+                    ? Theme.bg-card
+                    : (tab_ta.pressed ? Theme.bg-active : (tab_ta.has-hover ? Theme.bg-hover : transparent));
                 border-width: 1px;
-                border-color: root.active-tab == i ? #2A2745 : transparent;
+                border-color: root.active-tab == i ? Theme.stroke-strong : transparent;
 
                 animate background, border-color { duration: Theme.motion-base; easing: ease-out; }
 
@@ -143,7 +143,7 @@ export component AppHeader inherits Rectangle {
                     text: tab;
                     color: root.active-tab == i
                         ? Theme.text-primary
-                        : (tab_ta.has-hover ? #D0D6E2 : Theme.text-muted);
+                        : (tab_ta.has-hover ? Theme.text-primary : Theme.text-muted);
                     font-size: root.tab-font-size;
                     font-weight: root.active-tab == i ? 700 : 500;
                     horizontal-alignment: center;

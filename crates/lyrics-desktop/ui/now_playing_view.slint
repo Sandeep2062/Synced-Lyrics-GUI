@@ -20,6 +20,7 @@ export component NowPlayingView inherits Rectangle {
     in-out property <string> duration-text: "00:00";
     in-out property <[float]> waveform-data: [];
     in-out property <float> volume: 0.7;
+    in-out property <bool> is-muted: false;
 
     // Lyrics properties
     in-out property <int> active-line-index: -1;
@@ -28,6 +29,8 @@ export component NowPlayingView inherits Rectangle {
     in-out property <bool> active-has-words: false;
     in-out property <[LyricWord]> active-words-row1: [];
     in-out property <[LyricWord]> active-words-row2: [];
+    in-out property <int> lyrics-offset-ms: 0;
+    in-out property <string> offset-save-status: "";
 
     callback close();
     callback play-pause();
@@ -37,9 +40,13 @@ export component NowPlayingView inherits Rectangle {
     callback prev-track();
     callback next-track();
     callback volume-changed(float);
+    callback toggle-mute();
     callback seek-to-line(int);
     callback fetch-lyrics();
     callback toggle-queue();
+    callback adjust-offset(int);
+    callback set-offset(int);
+    callback write-offset-to-file();
 
     // Lyrics scroll geometry
     private property <length> line-height: 56px;
@@ -339,6 +346,39 @@ export component NowPlayingView inherits Rectangle {
                         }
                     }
                 }
+
+                // Volume row
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+
+                    Rectangle {
+                        width: 24px;
+                        height: 24px;
+
+                        Image {
+                            source: (root.is-muted || root.volume <= 0.001)
+                                ? @image-url("../assets/volume_mute.svg")
+                                : @image-url("../assets/volume.svg");
+                            width: 17px;
+                            height: 17px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            colorize: (root.is-muted || root.volume <= 0.001) ? #EF4444 : Theme.text-muted;
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-mute(); }
+                        }
+                    }
+
+                    VolumeSlider {
+                        width: 140px;
+                        value: root.is-muted ? 0.0 : root.volume;
+                        changed(v) => { root.volume-changed(v); }
+                    }
+                }
             }
 
             // Right Column: Big Readable Synced Lyrics
@@ -387,7 +427,7 @@ export component NowPlayingView inherits Rectangle {
                                 alignment: start;
                                 for word in root.active-words-row1: Text {
                                     text: word.text;
-                                    color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : #64748B);
+                                    color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : Theme.lyrics-inactive);
                                     font-size: 24px;
                                     font-weight: word.is-sung ? 700 : 500;
                                     vertical-alignment: center;
@@ -400,7 +440,7 @@ export component NowPlayingView inherits Rectangle {
                                 alignment: start;
                                 for word in root.active-words-row2: Text {
                                     text: word.text;
-                                    color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : #64748B);
+                                    color: word.is-current ? Theme.lyrics-current-word : (word.is-sung ? Theme.lyrics-sung : Theme.lyrics-inactive);
                                     font-size: 24px;
                                     font-weight: word.is-sung ? 700 : 500;
                                     vertical-alignment: center;
@@ -419,7 +459,7 @@ export component NowPlayingView inherits Rectangle {
                                 text: line.text;
                                 color: idx == root.active-line-index
                                     ? Theme.lyrics-active
-                                    : (np_line_ta.has-hover ? #E2E8F0 : Theme.lyrics-inactive);
+                                    : (np_line_ta.has-hover ? Theme.text-primary : Theme.lyrics-inactive);
                                 font-size: idx == root.active-line-index ? 24px : 17px;
                                 font-weight: idx == root.active-line-index ? 700 : 500;
                                 wrap: word-wrap;
@@ -461,7 +501,7 @@ export component NowPlayingView inherits Rectangle {
                 // Resume sync button
                 if root.lines.length > 0 && root.is-user-scrolled && root.active-line-index >= 0: Rectangle {
                     x: (parent.width - self.width) / 2;
-                    y: parent.height - self.height - 24px;
+                    y: parent.height - self.height - 48px;
                     height: 34px;
                     width: 156px;
                     border-radius: 17px;
@@ -493,6 +533,133 @@ export component NowPlayingView inherits Rectangle {
                     np_sync_ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.resume-sync(); }
+                    }
+                }
+
+                // Per-track Offset Control Toolbar (pinned overlay at the bottom)
+                if root.lines.length > 0: Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height - 8px;
+                    width: 380px;
+                    height: 32px;
+                    background: #0B0F19EE;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: root.lyrics-offset-ms != 0 ? #38BDF855 : #1E293B;
+                    drop-shadow-blur: 8px;
+                    drop-shadow-color: #00000099;
+                    animate border-color { duration: Theme.motion-fast; easing: ease-out; }
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: space-between;
+                        spacing: 4px;
+
+                        // Left: Offset readout
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+                            Text {
+                                text: "Offset:";
+                                color: Theme.text-dim;
+                                font-size: 11px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: (root.lyrics-offset-ms > 0 ? "+" : "") + root.lyrics-offset-ms + "ms";
+                                color: root.lyrics-offset-ms != 0 ? #38BDF8 : Theme.text-muted;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                            if root.offset-save-status != "": Text {
+                                text: " (" + root.offset-save-status + ")";
+                                color: #10B981;
+                                font-size: 10px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Right: Stepper buttons
+                        HorizontalLayout {
+                            spacing: 3px;
+                            alignment: end;
+
+                            // -500ms
+                            Rectangle {
+                                width: 38px;
+                                height: 22px;
+                                border-radius: 4px;
+                                background: np_btn_m500.pressed ? #1E293B : (np_btn_m500.has-hover ? #252F3F : #111827);
+                                border-width: 1px;
+                                border-color: #374151;
+                                Text { text: "-500"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                np_btn_m500 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(-500); } }
+                            }
+
+                            // -100ms
+                            Rectangle {
+                                width: 38px;
+                                height: 22px;
+                                border-radius: 4px;
+                                background: np_btn_m100.pressed ? #1E293B : (np_btn_m100.has-hover ? #252F3F : #111827);
+                                border-width: 1px;
+                                border-color: #374151;
+                                Text { text: "-100"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                np_btn_m100 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(-100); } }
+                            }
+
+                            // +100ms
+                            Rectangle {
+                                width: 38px;
+                                height: 22px;
+                                border-radius: 4px;
+                                background: np_btn_p100.pressed ? #1E293B : (np_btn_p100.has-hover ? #252F3F : #111827);
+                                border-width: 1px;
+                                border-color: #374151;
+                                Text { text: "+100"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                np_btn_p100 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(100); } }
+                            }
+
+                            // +500ms
+                            Rectangle {
+                                width: 38px;
+                                height: 22px;
+                                border-radius: 4px;
+                                background: np_btn_p500.pressed ? #1E293B : (np_btn_p500.has-hover ? #252F3F : #111827);
+                                border-width: 1px;
+                                border-color: #374151;
+                                Text { text: "+500"; color: Theme.text-muted; font-size: 10px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                np_btn_p500 := TouchArea { mouse-cursor: pointer; clicked => { root.adjust-offset(500); } }
+                            }
+
+                            // Reset to 0 (shown when offset != 0)
+                            if root.lyrics-offset-ms != 0: Rectangle {
+                                width: 34px;
+                                height: 22px;
+                                border-radius: 4px;
+                                background: np_btn_rst.pressed ? #2A3342 : (np_btn_rst.has-hover ? #374151 : #1F2937);
+                                border-width: 1px;
+                                border-color: #4B5563;
+                                Text { text: "Reset"; color: Theme.text-muted; font-size: 9px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+                                np_btn_rst := TouchArea { mouse-cursor: pointer; clicked => { root.set-offset(0); } }
+                            }
+
+                            // Write to .lrc (shown when offset != 0)
+                            if root.lyrics-offset-ms != 0: Rectangle {
+                                width: 58px;
+                                height: 22px;
+                                border-radius: 4px;
+                                background: np_btn_save.pressed ? #047857 : (np_btn_save.has-hover ? #059669 : #065F46);
+                                border-width: 1px;
+                                border-color: #10B981;
+                                Text { text: "Write .lrc"; color: #FFFFFF; font-size: 9px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                                np_btn_save := TouchArea { mouse-cursor: pointer; clicked => { root.write-offset-to-file(); } }
+                            }
+                        }
                     }
                 }
 
