@@ -442,12 +442,6 @@ pub fn score_duration(track_dur: Option<f64>, cand_dur: Option<f64>) -> (f64, bo
     }
 }
 
-/// Comprehensive candidate scoring matching track metadata against candidate metadata.
-///
-/// Features:
-/// - Evaluates title, artist, album, and duration.
-/// - Handles swapped Artist - Title order seamlessly.
-/// - Evaluates duration full score within 2s, decaying to 0 at ~10s, only when both are known.
 /// Minimum artist similarity for a candidate to be treated as the same recording.
 ///
 /// Character-level metrics score two unrelated names surprisingly high — "Cold Hart"
@@ -482,6 +476,12 @@ pub fn artist_matches(track_artist: &str, candidate_artist: &str) -> bool {
     similarity(track_artist, candidate_artist) >= ARTIST_MATCH_FLOOR
 }
 
+/// Comprehensive candidate scoring matching track metadata against candidate metadata.
+///
+/// Features:
+/// - Evaluates title, artist, album, and duration.
+/// - Handles swapped Artist - Title order seamlessly.
+/// - Evaluates duration full score within 2s, decaying to 0 at ~10s, only when both are known.
 pub fn score_candidate(track: &Track, cand: &Candidate) -> MatchScore {
     let direct_title = similarity(&track.title, &cand.title);
     let direct_artist = similarity(&track.artist, &cand.artist);

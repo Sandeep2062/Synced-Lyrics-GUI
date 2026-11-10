@@ -1,10 +1,19 @@
 name: Rust CI & Release
 
+# Release builds are triggered by a version tag push and nothing else. Pushing to
+# a branch must not start a build, so there is no `push: branches` trigger and no
+# `workflow_dispatch` entry point: cut a tag (git tag v1.2.0 && git push origin
+# v1.2.0) when you want the full build, test, package and release pipeline to run.
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
+
+# Re-pushing a tag replaces the run instead of stacking a second release build on
+# top of the one still running for the same version.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
