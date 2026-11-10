@@ -126,11 +126,8 @@ pub(crate) fn wire_refresh(
                 let mut all_paths = Vec::new();
                 for dir in &dirs {
                     let mut dir_paths = Vec::new();
-                    if lyrics_core::collect_audio_paths(
-                        std::path::Path::new(dir),
-                        &mut dir_paths,
-                    )
-                    .is_ok()
+                    if lyrics_core::collect_audio_paths(std::path::Path::new(dir), &mut dir_paths)
+                        .is_ok()
                     {
                         dir_paths.sort();
                         all_paths.extend(dir_paths);

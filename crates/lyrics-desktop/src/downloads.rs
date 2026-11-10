@@ -124,8 +124,8 @@ pub(crate) fn fetch_and_save_track_lyrics(
     let settings = load_settings().map_err(|e| e.to_string())?;
     let providers = providers_for_settings(&db, track, &settings)?;
     let cancelled = AtomicBool::new(false);
-    let outcome = download_track(track, mode, &providers, &cancelled, |_| {})
-        .map_err(|e| e.to_string())?;
+    let outcome =
+        download_track(track, mode, &providers, &cancelled, |_| {}).map_err(|e| e.to_string())?;
 
     if let DownloadOutcome::Downloaded { provider, synced } = outcome {
         let new_status = if synced {
@@ -187,7 +187,8 @@ fn rescan_batch_directories(db: &LibraryDb, cancelled: &Arc<AtomicBool>) -> Vec<
     if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
         return Vec::new();
     }
-    let scan_res = lyrics_core::scan_audio_paths_incremental(all_paths, Some(&existing_map), |_, _| {});
+    let scan_res =
+        lyrics_core::scan_audio_paths_incremental(all_paths, Some(&existing_map), |_, _| {});
     if !scan_res.changed_tracks.is_empty() {
         let _ = db.upsert_tracks(&scan_res.changed_tracks);
     }
@@ -203,7 +204,11 @@ fn download_single_batch_track(
     stats: &mut BatchStats,
     was_cancelled: &mut bool,
 ) -> BatchLogEntry {
-    let provider_results = Arc::new(Mutex::new(Vec::<(ProviderName, Option<bool>, Option<String>)>::new()));
+    let provider_results = Arc::new(Mutex::new(Vec::<(
+        ProviderName,
+        Option<bool>,
+        Option<String>,
+    )>::new()));
     let outcome_res = match providers_for_settings(db, track, settings) {
         Ok(providers) => {
             let pr_cb = Arc::clone(&provider_results);
@@ -228,11 +233,18 @@ fn download_single_batch_track(
         Err(e) => Err(e),
     };
 
-    let pr_list = provider_results.lock().map(|l| l.clone()).unwrap_or_default();
+    let pr_list = provider_results
+        .lock()
+        .map(|l| l.clone())
+        .unwrap_or_default();
     let mut parts = Vec::new();
     for (p, status, err) in pr_list {
         if let Some(synced) = status {
-            parts.push(format!("✓ {} ({})", p.label(), if synced { "synced" } else { "plain" }));
+            parts.push(format!(
+                "✓ {} ({})",
+                p.label(),
+                if synced { "synced" } else { "plain" }
+            ));
         } else if err.is_some() {
             parts.push(format!("⚠ {} (error)", p.label()));
         } else {
@@ -249,28 +261,52 @@ fn download_single_batch_track(
         Ok(DownloadOutcome::Downloaded { provider, synced }) => {
             if synced {
                 stats.synced += 1;
-                let _ = db.update_lyrics_status(&track.audio_path, LyricsStatus::Synced, Some(provider.label()));
-                ("SYNCED", "synced", format!("→ Saved synced lyrics from {}", provider.label()))
+                let _ = db.update_lyrics_status(
+                    &track.audio_path,
+                    LyricsStatus::Synced,
+                    Some(provider.label()),
+                );
+                (
+                    "SYNCED",
+                    "synced",
+                    format!("→ Saved synced lyrics from {}", provider.label()),
+                )
             } else {
                 stats.plain += 1;
-                let _ = db.update_lyrics_status(&track.audio_path, LyricsStatus::Plain, Some(provider.label()));
-                ("PLAIN", "plain", format!("→ Saved plain lyrics from {}", provider.label()))
+                let _ = db.update_lyrics_status(
+                    &track.audio_path,
+                    LyricsStatus::Plain,
+                    Some(provider.label()),
+                );
+                (
+                    "PLAIN",
+                    "plain",
+                    format!("→ Saved plain lyrics from {}", provider.label()),
+                )
             }
         }
         Ok(DownloadOutcome::NotFound) => {
             stats.not_found += 1;
-            ("NOT FOUND", "missing", "→ No matching lyrics found".to_string())
+            (
+                "NOT FOUND",
+                "missing",
+                "→ No matching lyrics found".to_string(),
+            )
         }
-        Ok(DownloadOutcome::Skipped) => {
-            ("SKIPPED", "info", "→ Skipped (kept existing lyrics)".to_string())
-        }
+        Ok(DownloadOutcome::Skipped) => (
+            "SKIPPED",
+            "info",
+            "→ Skipped (kept existing lyrics)".to_string(),
+        ),
         Ok(DownloadOutcome::Cancelled) => {
             *was_cancelled = true;
             ("CANCELLED", "missing", "→ Cancelled by user".to_string())
         }
-        Ok(DownloadOutcome::DryRun { .. }) => {
-            ("DRY RUN", "info", "→ Dry run (no lyrics written)".to_string())
-        }
+        Ok(DownloadOutcome::DryRun { .. }) => (
+            "DRY RUN",
+            "info",
+            "→ Dry run (no lyrics written)".to_string(),
+        ),
         Err(err) => {
             stats.errors += 1;
             ("ERROR", "error", format!("→ Error: {err}"))
@@ -330,7 +366,12 @@ fn execute_batch_download_loop(
 
         let cur_display = format!("{} — {}", track.artist, track.title);
         let prog = i as f32 / total_candidates as f32;
-        let prog_text = format!("Song {} of {} ({} remaining)", i + 1, total_candidates, total_candidates - i);
+        let prog_text = format!(
+            "Song {} of {} ({} remaining)",
+            i + 1,
+            total_candidates,
+            total_candidates - i
+        );
 
         let el = event_loop.clone();
         let cd_clone = cur_display.clone();
@@ -412,7 +453,12 @@ fn finish_batch_worker(
             w.set_batch_progress(1.0);
             w.set_batch_progress_text(format!("{}/{}", stats.processed, total_candidates).into());
             w.set_batch_current_track(
-                if was_cancelled { "Batch download stopped." } else { "Batch download completed!" }.into(),
+                if was_cancelled {
+                    "Batch download stopped."
+                } else {
+                    "Batch download completed!"
+                }
+                .into(),
             );
             w.set_batch_phase_text(
                 format!(
@@ -498,7 +544,10 @@ fn run_batch_download_worker(
         return;
     }
 
-    let candidates: Vec<Track> = all_tracks.into_iter().filter(|t| t.should_download(mode)).collect();
+    let candidates: Vec<Track> = all_tracks
+        .into_iter()
+        .filter(|t| t.should_download(mode))
+        .collect();
     let total_candidates = candidates.len();
     if total_candidates == 0 {
         logs.push(BatchLogEntry {
@@ -530,7 +579,9 @@ fn run_batch_download_worker(
     let el = event_loop.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = el.upgrade() {
-            w.set_batch_phase_text(format!("Phase 2: Downloading lyrics ({} tracks)", total_candidates).into());
+            w.set_batch_phase_text(
+                format!("Phase 2: Downloading lyrics ({} tracks)", total_candidates).into(),
+            );
         }
     });
 
@@ -549,11 +600,21 @@ fn run_batch_download_worker(
 
     logs.push(BatchLogEntry {
         timestamp: current_timestamp().into(),
-        track_title: if was_cancelled { "Process Stopped" } else { "Process Finished" }.into(),
+        track_title: if was_cancelled {
+            "Process Stopped"
+        } else {
+            "Process Finished"
+        }
+        .into(),
         track_artist: "Batch".into(),
         details: format!(
             "Processed {}/{} tracks. Synced: {}, Plain: {}, Not Found: {}, Errors: {}",
-            stats.processed, total_candidates, stats.synced, stats.plain, stats.not_found, stats.errors
+            stats.processed,
+            total_candidates,
+            stats.synced,
+            stats.plain,
+            stats.not_found,
+            stats.errors
         )
         .into(),
         action_text: "".into(),
@@ -596,9 +657,21 @@ pub(crate) fn wire_batch_dialog(
             }
             let Ok(s) = state.lock() else { return };
             let total = s.all_tracks.len() as i32;
-            let missing = s.all_tracks.iter().filter(|t| t.status == LyricsStatus::Missing).count() as i32;
-            let plain = s.all_tracks.iter().filter(|t| t.status == LyricsStatus::Plain).count() as i32;
-            let suspicious = s.all_tracks.iter().filter(|t| t.status == LyricsStatus::Suspicious).count() as i32;
+            let missing = s
+                .all_tracks
+                .iter()
+                .filter(|t| t.status == LyricsStatus::Missing)
+                .count() as i32;
+            let plain = s
+                .all_tracks
+                .iter()
+                .filter(|t| t.status == LyricsStatus::Plain)
+                .count() as i32;
+            let suspicious = s
+                .all_tracks
+                .iter()
+                .filter(|t| t.status == LyricsStatus::Suspicious)
+                .count() as i32;
             drop(s);
 
             w.set_batch_total_count(total);
@@ -624,7 +697,9 @@ pub(crate) fn wire_batch_dialog(
             if let Ok(lock) = job.lock() {
                 if let Some(ref handle) = *lock {
                     let was_paused = handle.paused.load(std::sync::atomic::Ordering::Relaxed);
-                    handle.paused.store(!was_paused, std::sync::atomic::Ordering::Relaxed);
+                    handle
+                        .paused
+                        .store(!was_paused, std::sync::atomic::Ordering::Relaxed);
                     if let Some(w) = weak.upgrade() {
                         w.set_batch_is_paused(!was_paused);
                     }
@@ -638,7 +713,9 @@ pub(crate) fn wire_batch_dialog(
         window.on_batch_stop(move || {
             if let Ok(mut lock) = job.lock() {
                 if let Some(ref handle) = *lock {
-                    handle.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                    handle
+                        .cancelled
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     if let Some(w) = weak.upgrade() {
                         w.set_batch_is_running(false);
                         w.set_batch_is_finished(true);
@@ -659,8 +736,14 @@ pub(crate) fn wire_batch_dialog(
             let (mode, mode_title) = match mode_idx {
                 0 => (DownloadMode::ReplaceAll, "Batch Download: Whole Directory"),
                 1 => (DownloadMode::MissingOnly, "Batch Download: Missing Only"),
-                2 => (DownloadMode::UpgradePlain, "Batch Download: Upgrade Plain to Synced"),
-                3 => (DownloadMode::FixSuspicious, "Batch Download: Fix Suspicious"),
+                2 => (
+                    DownloadMode::UpgradePlain,
+                    "Batch Download: Upgrade Plain to Synced",
+                ),
+                3 => (
+                    DownloadMode::FixSuspicious,
+                    "Batch Download: Fix Suspicious",
+                ),
                 _ => (DownloadMode::MissingOnly, "Batch Download"),
             };
 
@@ -674,7 +757,9 @@ pub(crate) fn wire_batch_dialog(
             }
 
             w.set_batch_mode_title(SharedString::from(mode_title));
-            w.set_batch_phase_text(SharedString::from("Phase 1: Rescanning music directories..."));
+            w.set_batch_phase_text(SharedString::from(
+                "Phase 1: Rescanning music directories...",
+            ));
             w.set_batch_current_track(SharedString::from("Rescanning music directories..."));
             w.set_batch_progress(0.0);
             w.set_batch_progress_text(SharedString::from("Rescanning..."));
@@ -692,7 +777,8 @@ pub(crate) fn wire_batch_dialog(
                 timestamp: current_timestamp().into(),
                 track_title: "Rescan Directories".into(),
                 track_artist: "Library".into(),
-                details: "Rescanning music folders to update tracks before starting download...".into(),
+                details: "Rescanning music folders to update tracks before starting download..."
+                    .into(),
                 action_text: "".into(),
                 badge_text: "SCAN".into(),
                 badge_type: "scan".into(),
@@ -738,8 +824,12 @@ pub(crate) fn wire_single_track_downloads(
         window.on_fetch_track(move |row_idx| {
             let Ok(s) = state.lock() else { return };
             let row = row_idx as usize;
-            let Some(&track_idx) = s.filtered_tracks.get(row) else { return };
-            let Some(track) = s.all_tracks.get(track_idx).cloned() else { return };
+            let Some(&track_idx) = s.filtered_tracks.get(row) else {
+                return;
+            };
+            let Some(track) = s.all_tracks.get(track_idx).cloned() else {
+                return;
+            };
             drop(s);
             let event_loop = weak.clone();
             let state = Arc::clone(&state);
@@ -761,10 +851,19 @@ pub(crate) fn wire_single_track_downloads(
         let cache = Arc::clone(art_loader);
         window.on_fetch_current_lyrics(move || {
             let Ok(eng) = engine.lock() else { return };
-            let Some(current_path) = eng.current_path.clone() else { return };
+            let Some(current_path) = eng.current_path.clone() else {
+                return;
+            };
             drop(eng);
             let Ok(s) = state.lock() else { return };
-            let Some(track) = s.all_tracks.iter().find(|t| t.audio_path == current_path).cloned() else { return };
+            let Some(track) = s
+                .all_tracks
+                .iter()
+                .find(|t| t.audio_path == current_path)
+                .cloned()
+            else {
+                return;
+            };
             drop(s);
             let event_loop = weak.clone();
             let state = Arc::clone(&state);
@@ -791,7 +890,10 @@ pub(crate) fn wire_single_track_downloads(
             let track_opt = if let Some(ref path) = current_path {
                 s.all_tracks.iter().find(|t| &t.audio_path == path).cloned()
             } else if let Some(row) = s.current_filtered_row {
-                s.filtered_tracks.get(row).and_then(|&idx| s.all_tracks.get(idx)).cloned()
+                s.filtered_tracks
+                    .get(row)
+                    .and_then(|&idx| s.all_tracks.get(idx))
+                    .cloned()
             } else {
                 None
             };
@@ -808,12 +910,22 @@ pub(crate) fn wire_single_track_downloads(
                     let settings = load_settings().map_err(|e| e.to_string())?;
                     let providers = providers_for_settings(&db, &track, &settings)?;
                     let cancelled = AtomicBool::new(false);
-                    let outcome = download_track(&track, DownloadMode::ReplaceAll, &providers, &cancelled, |_| {})
-                        .map_err(|e| e.to_string())?;
+                    let outcome = download_track(
+                        &track,
+                        DownloadMode::ReplaceAll,
+                        &providers,
+                        &cancelled,
+                        |_| {},
+                    )
+                    .map_err(|e| e.to_string())?;
                     if let DownloadOutcome::Downloaded { provider, synced } = outcome {
                         db.update_lyrics_status(
                             &track.audio_path,
-                            if synced { LyricsStatus::Synced } else { LyricsStatus::Plain },
+                            if synced {
+                                LyricsStatus::Synced
+                            } else {
+                                LyricsStatus::Plain
+                            },
                             Some(provider.label()),
                         )
                         .map_err(|e| e.to_string())?;
@@ -863,8 +975,12 @@ fn wire_identify_track_actions(
         window.on_identify_track(move |row_idx| {
             let Ok(s) = state.lock() else { return };
             let row = row_idx as usize;
-            let Some(&track_idx) = s.filtered_tracks.get(row) else { return };
-            let Some(track) = s.all_tracks.get(track_idx).cloned() else { return };
+            let Some(&track_idx) = s.filtered_tracks.get(row) else {
+                return;
+            };
+            let Some(track) = s.all_tracks.get(track_idx).cloned() else {
+                return;
+            };
             drop(s);
             let event_loop = weak.clone();
             thread::spawn(move || {
@@ -879,7 +995,9 @@ fn wire_identify_track_actions(
                     if let (Some(w), Some(sug)) = (event_loop.upgrade(), suggestion) {
                         w.set_lyrics_suggested_artist(sug.suggested_artist.into());
                         w.set_lyrics_suggested_title(sug.suggested_title.into());
-                        w.set_lyrics_suggested_album(sug.suggested_album.unwrap_or_default().into());
+                        w.set_lyrics_suggested_album(
+                            sug.suggested_album.unwrap_or_default().into(),
+                        );
                         w.set_lyrics_has_identification_suggestion(true);
                     }
                 });
@@ -892,10 +1010,19 @@ fn wire_identify_track_actions(
         let engine = Arc::clone(audio);
         window.on_identify_current_track(move || {
             let Ok(eng) = engine.lock() else { return };
-            let Some(current_path) = eng.current_path.clone() else { return };
+            let Some(current_path) = eng.current_path.clone() else {
+                return;
+            };
             drop(eng);
             let Ok(s) = state.lock() else { return };
-            let Some(track) = s.all_tracks.iter().find(|t| t.audio_path == current_path).cloned() else { return };
+            let Some(track) = s
+                .all_tracks
+                .iter()
+                .find(|t| t.audio_path == current_path)
+                .cloned()
+            else {
+                return;
+            };
             drop(s);
             let event_loop = weak.clone();
             if let Some(w) = event_loop.upgrade() {
@@ -915,7 +1042,9 @@ fn wire_identify_track_actions(
                         if let Some(sug) = suggestion {
                             w.set_lyrics_suggested_artist(sug.suggested_artist.into());
                             w.set_lyrics_suggested_title(sug.suggested_title.into());
-                            w.set_lyrics_suggested_album(sug.suggested_album.unwrap_or_default().into());
+                            w.set_lyrics_suggested_album(
+                                sug.suggested_album.unwrap_or_default().into(),
+                            );
                             w.set_lyrics_has_identification_suggestion(true);
                         }
                     }
@@ -943,7 +1072,10 @@ fn wire_accept_and_ignore_identification(
             let track_opt = if let Some(ref path) = current_path {
                 s.all_tracks.iter().find(|t| &t.audio_path == path).cloned()
             } else if let Some(row) = s.current_filtered_row {
-                s.filtered_tracks.get(row).and_then(|&idx| s.all_tracks.get(idx)).cloned()
+                s.filtered_tracks
+                    .get(row)
+                    .and_then(|&idx| s.all_tracks.get(idx))
+                    .cloned()
             } else {
                 None
             };
@@ -961,7 +1093,11 @@ fn wire_accept_and_ignore_identification(
                 current_album: track.album.clone(),
                 suggested_artist: suggested_artist.clone(),
                 suggested_title: suggested_title.clone(),
-                suggested_album: if suggested_album.trim().is_empty() { None } else { Some(suggested_album) },
+                suggested_album: if suggested_album.trim().is_empty() {
+                    None
+                } else {
+                    Some(suggested_album)
+                },
                 confidence: 1.0,
                 source: "user_accepted".to_string(),
                 reason: "Accepted by user".to_string(),
@@ -974,7 +1110,11 @@ fn wire_accept_and_ignore_identification(
                 let _ = (|| -> Result<(), String> {
                     apply_accepted_identification(&mut track, &suggestion)?;
                     if let Ok(mut s) = state.lock() {
-                        if let Some(t) = s.all_tracks.iter_mut().find(|t| t.audio_path == track.audio_path) {
+                        if let Some(t) = s
+                            .all_tracks
+                            .iter_mut()
+                            .find(|t| t.audio_path == track.audio_path)
+                        {
                             t.artist = track.artist.clone();
                             t.title = track.title.clone();
                             t.album = track.album.clone();
@@ -987,7 +1127,10 @@ fn wire_accept_and_ignore_identification(
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = el1.upgrade() {
                             w.set_track_title(updated_track.title.clone().into());
-                            w.set_track_subtitle(format!("{} • {}", updated_track.artist, updated_track.album).into());
+                            w.set_track_subtitle(
+                                format!("{} • {}", updated_track.artist, updated_track.album)
+                                    .into(),
+                            );
                             load_library_into_ui(&w, &st1, &al1);
                         }
                     });

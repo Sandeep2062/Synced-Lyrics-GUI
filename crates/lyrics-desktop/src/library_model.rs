@@ -106,9 +106,9 @@ impl UiLibrary {
         }
         for album in albums {
             if let Some(indices) = self.album_to_indices.get(album) {
-                if let Some(Some(img)) =
-                    crate::art_loader::cached_cover_image(&crate::art_loader::album_image_key(album))
-                {
+                if let Some(Some(img)) = crate::art_loader::cached_cover_image(
+                    &crate::art_loader::album_image_key(album),
+                ) {
                     for &idx in indices {
                         if let Some(track) = self.tracks.get_mut(idx) {
                             if !track.has_cover {

@@ -115,7 +115,10 @@ impl GoldenTrack {
     pub fn to_track(&self) -> Track {
         Track {
             audio_path: self.file_path.clone(),
-            lrc_path: self.file_path.replace(".mp3", ".lrc").replace(".flac", ".lrc"),
+            lrc_path: self
+                .file_path
+                .replace(".mp3", ".lrc")
+                .replace(".flac", ".lrc"),
             artist: self.tag_artist.clone(),
             title: self.tag_title.clone(),
             album: self.tag_album.clone(),
@@ -226,7 +229,11 @@ fn shift_lrc(lrc: &str, delta: f64) -> String {
     let mut out = Vec::new();
     for line in lrc.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with('[') && !trimmed.starts_with("[ar:") && !trimmed.starts_with("[ti:") && !trimmed.starts_with("[al:") {
+        if trimmed.starts_with('[')
+            && !trimmed.starts_with("[ar:")
+            && !trimmed.starts_with("[ti:")
+            && !trimmed.starts_with("[al:")
+        {
             if let Some(close) = trimmed.find(']') {
                 let tag = &trimmed[1..close];
                 if let Some((min_str, sec_str)) = tag.split_once(':') {
@@ -537,7 +544,6 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             expected_offset_seconds: None,
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 4-6: Wrong Tags (Missing Artist, Filename-like Title, Track Number)
         // ---------------------------------------------------------------------
@@ -555,17 +561,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Nevermind".into()),
             is_instrumental: false,
             local_lrc: Some(NIRVANA_SMELLS_LIKE_TEEN_SPIRIT_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Smells Like Teen Spirit".into(),
-                    artist: "Nirvana".into(),
-                    album: Some("Nevermind".into()),
-                    duration_seconds: Some(301.0),
-                    synced: Some(NIRVANA_SMELLS_LIKE_TEEN_SPIRIT_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Smells Like Teen Spirit".into(),
+                artist: "Nirvana".into(),
+                album: Some("Nevermind".into()),
+                duration_seconds: Some(301.0),
+                synced: Some(NIRVANA_SMELLS_LIKE_TEEN_SPIRIT_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: Some(ExpectedIdentification {
                 should_suggest: true,
                 is_swapped: false,
@@ -590,17 +594,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Rumours".into()),
             is_instrumental: false,
             local_lrc: Some(FLEETWOOD_MAC_DREAMS_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Dreams".into(),
-                    artist: "Fleetwood Mac".into(),
-                    album: Some("Rumours".into()),
-                    duration_seconds: Some(257.0),
-                    synced: Some(FLEETWOOD_MAC_DREAMS_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Dreams".into(),
+                artist: "Fleetwood Mac".into(),
+                album: Some("Rumours".into()),
+                duration_seconds: Some(257.0),
+                synced: Some(FLEETWOOD_MAC_DREAMS_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: Some(ExpectedIdentification {
                 should_suggest: true,
                 is_swapped: false,
@@ -613,7 +615,8 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
         },
         GoldenTrack {
             id: "T06_come_together_track_num_tag".into(),
-            description: "Beatles track with track number prefix '01. Come Together' in title".into(),
+            description: "Beatles track with track number prefix '01. Come Together' in title"
+                .into(),
             categories: vec![GoldenCategory::WrongTags, GoldenCategory::CorrectLrc],
             file_path: "01 - The Beatles - Come Together.mp3".into(),
             tag_artist: "The Beatles".into(),
@@ -625,17 +628,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Abbey Road".into()),
             is_instrumental: false,
             local_lrc: Some(BEATLES_COME_TOGETHER_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Come Together".into(),
-                    artist: "The Beatles".into(),
-                    album: Some("Abbey Road".into()),
-                    duration_seconds: Some(259.0),
-                    synced: Some(BEATLES_COME_TOGETHER_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Come Together".into(),
+                artist: "The Beatles".into(),
+                album: Some("Abbey Road".into()),
+                duration_seconds: Some(259.0),
+                synced: Some(BEATLES_COME_TOGETHER_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: Some(ExpectedIdentification {
                 should_suggest: true,
                 is_swapped: false,
@@ -646,14 +647,16 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             expected_offset_seconds: None,
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 7-9: Swapped Artist and Title
         // ---------------------------------------------------------------------
         GoldenTrack {
             id: "T07_bohemian_rhapsody_swapped".into(),
             description: "Queen - Bohemian Rhapsody with Artist and Title reversed in tags".into(),
-            categories: vec![GoldenCategory::SwappedArtistTitle, GoldenCategory::CorrectLrc],
+            categories: vec![
+                GoldenCategory::SwappedArtistTitle,
+                GoldenCategory::CorrectLrc,
+            ],
             file_path: "Queen - Bohemian Rhapsody.mp3".into(),
             tag_artist: "Bohemian Rhapsody".into(),
             tag_title: "Queen".into(),
@@ -697,7 +700,10 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
         GoldenTrack {
             id: "T08_hotel_california_swapped".into(),
             description: "Eagles - Hotel California with Artist and Title reversed in tags".into(),
-            categories: vec![GoldenCategory::SwappedArtistTitle, GoldenCategory::CorrectLrc],
+            categories: vec![
+                GoldenCategory::SwappedArtistTitle,
+                GoldenCategory::CorrectLrc,
+            ],
             file_path: "Eagles - Hotel California.mp3".into(),
             tag_artist: "Hotel California".into(),
             tag_title: "Eagles".into(),
@@ -708,17 +714,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Hotel California".into()),
             is_instrumental: false,
             local_lrc: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Hotel California".into(),
-                    artist: "Eagles".into(),
-                    album: Some("Hotel California".into()),
-                    duration_seconds: Some(391.0),
-                    synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Hotel California".into(),
+                artist: "Eagles".into(),
+                album: Some("Hotel California".into()),
+                duration_seconds: Some(391.0),
+                synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: Some(ExpectedIdentification {
                 should_suggest: true,
                 is_swapped: true,
@@ -732,7 +736,10 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
         GoldenTrack {
             id: "T09_cold_hart_passion_swapped".into(),
             description: "Cold Hart - Passion with Artist and Title swapped in tags".into(),
-            categories: vec![GoldenCategory::SwappedArtistTitle, GoldenCategory::CorrectLrc],
+            categories: vec![
+                GoldenCategory::SwappedArtistTitle,
+                GoldenCategory::CorrectLrc,
+            ],
             file_path: "Cold Hart - Passion.mp3".into(),
             tag_artist: "Passion".into(),
             tag_title: "Cold Hart".into(),
@@ -743,17 +750,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Downer".into()),
             is_instrumental: false,
             local_lrc: Some(COLD_HART_PASSION_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Passion".into(),
-                    artist: "Cold Hart".into(),
-                    album: Some("Downer".into()),
-                    duration_seconds: Some(145.0),
-                    synced: Some(COLD_HART_PASSION_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Passion".into(),
+                artist: "Cold Hart".into(),
+                album: Some("Downer".into()),
+                duration_seconds: Some(145.0),
+                synced: Some(COLD_HART_PASSION_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: Some(ExpectedIdentification {
                 should_suggest: true,
                 is_swapped: true,
@@ -764,15 +769,18 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             expected_offset_seconds: None,
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 10-13: Noisy Titles (Features, Video labels, Remasters, Production)
         // ---------------------------------------------------------------------
         GoldenTrack {
             id: "T10_in_the_end_noisy_features".into(),
-            description: "Linkin Park - In the End with '(feat. Chester Bennington) [Official Music Video]'".into(),
+            description:
+                "Linkin Park - In the End with '(feat. Chester Bennington) [Official Music Video]'"
+                    .into(),
             categories: vec![GoldenCategory::NoisyTitle, GoldenCategory::CorrectLrc],
-            file_path: "Linkin Park - In the End (feat. Chester Bennington) [Official Music Video].mp3".into(),
+            file_path:
+                "Linkin Park - In the End (feat. Chester Bennington) [Official Music Video].mp3"
+                    .into(),
             tag_artist: "Linkin Park".into(),
             tag_title: "In the End (feat. Chester Bennington) [Official Music Video]".into(),
             tag_album: "Hybrid Theory".into(),
@@ -821,17 +829,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("The Wall".into()),
             is_instrumental: false,
             local_lrc: Some(PINK_FLOYD_COMFORTABLY_NUMB_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Comfortably Numb".into(),
-                    artist: "Pink Floyd".into(),
-                    album: Some("The Wall".into()),
-                    duration_seconds: Some(382.0),
-                    synced: Some(PINK_FLOYD_COMFORTABLY_NUMB_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Comfortably Numb".into(),
+                artist: "Pink Floyd".into(),
+                album: Some("The Wall".into()),
+                duration_seconds: Some(382.0),
+                synced: Some(PINK_FLOYD_COMFORTABLY_NUMB_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
@@ -890,23 +896,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("(What's the Story) Morning Glory?".into()),
             is_instrumental: false,
             local_lrc: Some(OASIS_WONDERWALL_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Wonderwall".into(),
-                    artist: "Oasis".into(),
-                    album: Some("(What's the Story) Morning Glory?".into()),
-                    duration_seconds: Some(258.0),
-                    synced: Some(OASIS_WONDERWALL_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Wonderwall".into(),
+                artist: "Oasis".into(),
+                album: Some("(What's the Story) Morning Glory?".into()),
+                duration_seconds: Some(258.0),
+                synced: Some(OASIS_WONDERWALL_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 14-16: Wrong-Song LRC (Lyrics of completely different song assigned)
         // ---------------------------------------------------------------------
@@ -924,17 +927,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("A Night at the Opera".into()),
             is_instrumental: false,
             local_lrc: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Bohemian Rhapsody".into(),
-                    artist: "Queen".into(),
-                    album: Some("A Night at the Opera".into()),
-                    duration_seconds: Some(354.0),
-                    synced: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Bohemian Rhapsody".into(),
+                artist: "Queen".into(),
+                album: Some("A Night at the Opera".into()),
+                duration_seconds: Some(354.0),
+                synced: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: true,
             expected_offset_seconds: None,
@@ -954,17 +955,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("÷ (Divide)".into()),
             is_instrumental: false,
             local_lrc: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Shape of You".into(),
-                    artist: "Ed Sheeran".into(),
-                    album: Some("÷ (Divide)".into()),
-                    duration_seconds: Some(233.0),
-                    synced: Some(ED_SHEERAN_SHAPE_OF_YOU_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Shape of You".into(),
+                artist: "Ed Sheeran".into(),
+                album: Some("÷ (Divide)".into()),
+                duration_seconds: Some(233.0),
+                synced: Some(ED_SHEERAN_SHAPE_OF_YOU_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: true,
             expected_offset_seconds: None,
@@ -972,7 +971,8 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
         },
         GoldenTrack {
             id: "T16_hotel_california_wrong_song_mismatch_tag".into(),
-            description: "Eagles track with [ti: Despacito] metadata mismatch tag and lyrics".into(),
+            description: "Eagles track with [ti: Despacito] metadata mismatch tag and lyrics"
+                .into(),
             categories: vec![GoldenCategory::WrongSongLrc, GoldenCategory::CorrectTags],
             file_path: "Eagles - Hotel California.mp3".into(),
             tag_artist: "Eagles".into(),
@@ -983,31 +983,31 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_title: "Hotel California".into(),
             true_album: Some("Hotel California".into()),
             is_instrumental: false,
-            local_lrc: Some("\
+            local_lrc: Some(
+                "\
 [ti: Despacito]
 [ar: Luis Fonsi]
 [00:01.00]Ay, Fonsi, DY
 [00:03.00]Oh, oh no, oh no
 [00:05.50]Hey, yeah, dididiri Daddy, go!
 [00:09.00]Sí, sabes que ya llevo un rato mirándote
-[00:14.50]Tengo que bailar contigo hoy".into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Hotel California".into(),
-                    artist: "Eagles".into(),
-                    album: Some("Hotel California".into()),
-                    duration_seconds: Some(391.0),
-                    synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+[00:14.50]Tengo que bailar contigo hoy"
+                    .into(),
+            ),
+            candidates: vec![CandidateFixture {
+                title: "Hotel California".into(),
+                artist: "Eagles".into(),
+                album: Some("Hotel California".into()),
+                duration_seconds: Some(391.0),
+                synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: true,
             expected_offset_seconds: None,
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 17-18: LRC Offset by +1.5s
         // ---------------------------------------------------------------------
@@ -1025,17 +1025,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("A Night at the Opera".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(QUEEN_BOHEMIAN_RHAPSODY_LRC, 1.5)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Bohemian Rhapsody".into(),
-                    artist: "Queen".into(),
-                    album: Some("A Night at the Opera".into()),
-                    duration_seconds: Some(354.0),
-                    synced: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Bohemian Rhapsody".into(),
+                artist: "Queen".into(),
+                album: Some("A Night at the Opera".into()),
+                duration_seconds: Some(354.0),
+                synced: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(1.5),
@@ -1055,23 +1053,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Hotel California".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(EAGLES_HOTEL_CALIFORNIA_LRC, 1.5)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Hotel California".into(),
-                    artist: "Eagles".into(),
-                    album: Some("Hotel California".into()),
-                    duration_seconds: Some(391.0),
-                    synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Hotel California".into(),
+                artist: "Eagles".into(),
+                album: Some("Hotel California".into()),
+                duration_seconds: Some(391.0),
+                synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(1.5),
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 19-20: LRC Offset by -1.5s
         // ---------------------------------------------------------------------
@@ -1089,17 +1084,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("÷ (Divide)".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(ED_SHEERAN_SHAPE_OF_YOU_LRC, -1.5)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Shape of You".into(),
-                    artist: "Ed Sheeran".into(),
-                    album: Some("÷ (Divide)".into()),
-                    duration_seconds: Some(233.0),
-                    synced: Some(ED_SHEERAN_SHAPE_OF_YOU_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Shape of You".into(),
+                artist: "Ed Sheeran".into(),
+                album: Some("÷ (Divide)".into()),
+                duration_seconds: Some(233.0),
+                synced: Some(ED_SHEERAN_SHAPE_OF_YOU_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(-1.5),
@@ -1119,23 +1112,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Nevermind".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(NIRVANA_SMELLS_LIKE_TEEN_SPIRIT_LRC, -1.5)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Smells Like Teen Spirit".into(),
-                    artist: "Nirvana".into(),
-                    album: Some("Nevermind".into()),
-                    duration_seconds: Some(301.0),
-                    synced: Some(NIRVANA_SMELLS_LIKE_TEEN_SPIRIT_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Smells Like Teen Spirit".into(),
+                artist: "Nirvana".into(),
+                album: Some("Nevermind".into()),
+                duration_seconds: Some(301.0),
+                synced: Some(NIRVANA_SMELLS_LIKE_TEEN_SPIRIT_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(-1.5),
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 21-22: LRC Offset by +3.0s
         // ---------------------------------------------------------------------
@@ -1153,17 +1143,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("A Night at the Opera".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(QUEEN_BOHEMIAN_RHAPSODY_LRC, 3.0)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Bohemian Rhapsody".into(),
-                    artist: "Queen".into(),
-                    album: Some("A Night at the Opera".into()),
-                    duration_seconds: Some(354.0),
-                    synced: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Bohemian Rhapsody".into(),
+                artist: "Queen".into(),
+                album: Some("A Night at the Opera".into()),
+                duration_seconds: Some(354.0),
+                synced: Some(QUEEN_BOHEMIAN_RHAPSODY_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(3.0),
@@ -1183,23 +1171,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Rumours".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(FLEETWOOD_MAC_DREAMS_LRC, 3.0)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Dreams".into(),
-                    artist: "Fleetwood Mac".into(),
-                    album: Some("Rumours".into()),
-                    duration_seconds: Some(257.0),
-                    synced: Some(FLEETWOOD_MAC_DREAMS_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Dreams".into(),
+                artist: "Fleetwood Mac".into(),
+                album: Some("Rumours".into()),
+                duration_seconds: Some(257.0),
+                synced: Some(FLEETWOOD_MAC_DREAMS_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(3.0),
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 23-24: LRC Offset by -3.0s
         // ---------------------------------------------------------------------
@@ -1217,17 +1202,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Hotel California".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(EAGLES_HOTEL_CALIFORNIA_LRC, -3.0)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Hotel California".into(),
-                    artist: "Eagles".into(),
-                    album: Some("Hotel California".into()),
-                    duration_seconds: Some(391.0),
-                    synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Hotel California".into(),
+                artist: "Eagles".into(),
+                album: Some("Hotel California".into()),
+                duration_seconds: Some(391.0),
+                synced: Some(EAGLES_HOTEL_CALIFORNIA_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(-3.0),
@@ -1247,23 +1230,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("(What's the Story) Morning Glory?".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(OASIS_WONDERWALL_LRC, -3.0)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Wonderwall".into(),
-                    artist: "Oasis".into(),
-                    album: Some("(What's the Story) Morning Glory?".into()),
-                    duration_seconds: Some(258.0),
-                    synced: Some(OASIS_WONDERWALL_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Wonderwall".into(),
+                artist: "Oasis".into(),
+                album: Some("(What's the Story) Morning Glory?".into()),
+                duration_seconds: Some(258.0),
+                synced: Some(OASIS_WONDERWALL_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(-3.0),
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 25-27: Plain-Only (Unsynchronized Lyrics)
         // ---------------------------------------------------------------------
@@ -1320,17 +1300,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("The Freewheelin' Bob Dylan".into()),
             is_instrumental: false,
             local_lrc: Some(BOB_DYLAN_BLOWIN_PLAIN.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Blowin' in the Wind".into(),
-                    artist: "Bob Dylan".into(),
-                    album: Some("The Freewheelin' Bob Dylan".into()),
-                    duration_seconds: Some(168.0),
-                    synced: None,
-                    plain: Some(BOB_DYLAN_BLOWIN_PLAIN.into()),
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Blowin' in the Wind".into(),
+                artist: "Bob Dylan".into(),
+                album: Some("The Freewheelin' Bob Dylan".into()),
+                duration_seconds: Some(168.0),
+                synced: None,
+                plain: Some(BOB_DYLAN_BLOWIN_PLAIN.into()),
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
@@ -1350,23 +1328,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Various Positions".into()),
             is_instrumental: false,
             local_lrc: Some(LEONARD_COHEN_HALLELUJAH_PLAIN.into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Hallelujah".into(),
-                    artist: "Leonard Cohen".into(),
-                    album: Some("Various Positions".into()),
-                    duration_seconds: Some(279.0),
-                    synced: None,
-                    plain: Some(LEONARD_COHEN_HALLELUJAH_PLAIN.into()),
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Hallelujah".into(),
+                artist: "Leonard Cohen".into(),
+                album: Some("Various Positions".into()),
+                duration_seconds: Some(279.0),
+                synced: None,
+                plain: Some(LEONARD_COHEN_HALLELUJAH_PLAIN.into()),
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
             expected_select_target: true,
         },
-
         // ---------------------------------------------------------------------
         // 28-30: Instrumental (No lyrics)
         // ---------------------------------------------------------------------
@@ -1384,17 +1359,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Piano Sonata No. 14".into()),
             is_instrumental: true,
             local_lrc: None,
-            candidates: vec![
-                CandidateFixture {
-                    title: "Moonlight Sonata".into(),
-                    artist: "Ludwig van Beethoven".into(),
-                    album: Some("Piano Sonata No. 14".into()),
-                    duration_seconds: Some(320.0),
-                    synced: None,
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Moonlight Sonata".into(),
+                artist: "Ludwig van Beethoven".into(),
+                album: Some("Piano Sonata No. 14".into()),
+                duration_seconds: Some(320.0),
+                synced: None,
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
@@ -1414,17 +1387,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Kind of Blue".into()),
             is_instrumental: true,
             local_lrc: None,
-            candidates: vec![
-                CandidateFixture {
-                    title: "So What".into(),
-                    artist: "Miles Davis".into(),
-                    album: Some("Kind of Blue".into()),
-                    duration_seconds: Some(562.0),
-                    synced: None,
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "So What".into(),
+                artist: "Miles Davis".into(),
+                album: Some("Kind of Blue".into()),
+                duration_seconds: Some(562.0),
+                synced: None,
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
@@ -1444,23 +1415,20 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Inception (OST)".into()),
             is_instrumental: true,
             local_lrc: None,
-            candidates: vec![
-                CandidateFixture {
-                    title: "Time".into(),
-                    artist: "Hans Zimmer".into(),
-                    album: Some("Inception (OST)".into()),
-                    duration_seconds: Some(275.0),
-                    synced: None,
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Time".into(),
+                artist: "Hans Zimmer".into(),
+                album: Some("Inception (OST)".into()),
+                duration_seconds: Some(275.0),
+                synced: None,
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: None,
             expected_select_target: false,
         },
-
         // ---------------------------------------------------------------------
         // 31-33: Combined Real-World Edge Cases
         // ---------------------------------------------------------------------
@@ -1514,7 +1482,9 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
         },
         GoldenTrack {
             id: "T32_billie_jean_noisy_and_offset_1_5".into(),
-            description: "Michael Jackson - Billie Jean with '- 2003 Remastered' noise and +1.5s offset".into(),
+            description:
+                "Michael Jackson - Billie Jean with '- 2003 Remastered' noise and +1.5s offset"
+                    .into(),
             categories: vec![
                 GoldenCategory::NoisyTitle,
                 GoldenCategory::OffsetPlus15,
@@ -1530,17 +1500,15 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_album: Some("Thriller".into()),
             is_instrumental: false,
             local_lrc: Some(shift_lrc(MICHAEL_JACKSON_BILLIE_JEAN_LRC, 1.5)),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Billie Jean".into(),
-                    artist: "Michael Jackson".into(),
-                    album: Some("Thriller".into()),
-                    duration_seconds: Some(294.0),
-                    synced: Some(MICHAEL_JACKSON_BILLIE_JEAN_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+            candidates: vec![CandidateFixture {
+                title: "Billie Jean".into(),
+                artist: "Michael Jackson".into(),
+                album: Some("Thriller".into()),
+                duration_seconds: Some(294.0),
+                synced: Some(MICHAEL_JACKSON_BILLIE_JEAN_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: None,
             expected_wrong_song: false,
             expected_offset_seconds: Some(1.5),
@@ -1548,7 +1516,8 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
         },
         GoldenTrack {
             id: "T33_viva_la_vida_wrong_tags_wrong_song".into(),
-            description: "Coldplay - Viva La Vida with Unknown Artist and Radiohead lyrics in LRC".into(),
+            description: "Coldplay - Viva La Vida with Unknown Artist and Radiohead lyrics in LRC"
+                .into(),
             categories: vec![GoldenCategory::WrongTags, GoldenCategory::WrongSongLrc],
             file_path: "Coldplay - Viva La Vida.mp3".into(),
             tag_artist: "Unknown Artist".into(),
@@ -1559,23 +1528,24 @@ pub fn build_golden_set() -> Vec<GoldenTrack> {
             true_title: "Viva La Vida".into(),
             true_album: Some("Viva la Vida or Death and All His Friends".into()),
             is_instrumental: false,
-            local_lrc: Some("\
+            local_lrc: Some(
+                "\
 [00:10.00]When you were here before, couldn't look you in the eye
 [00:16.00]You're just like an angel, your skin makes me cry
 [00:23.00]You float like a feather in a beautiful world
 [00:29.50]I wish I was special, you're so very special
-[00:36.00]But I'm a creep, I'm a weirdo".into()),
-            candidates: vec![
-                CandidateFixture {
-                    title: "Viva La Vida".into(),
-                    artist: "Coldplay".into(),
-                    album: Some("Viva la Vida or Death and All His Friends".into()),
-                    duration_seconds: Some(242.0),
-                    synced: Some(COLDPLAY_VIVA_LA_VIDA_LRC.into()),
-                    plain: None,
-                    is_target: true,
-                },
-            ],
+[00:36.00]But I'm a creep, I'm a weirdo"
+                    .into(),
+            ),
+            candidates: vec![CandidateFixture {
+                title: "Viva La Vida".into(),
+                artist: "Coldplay".into(),
+                album: Some("Viva la Vida or Death and All His Friends".into()),
+                duration_seconds: Some(242.0),
+                synced: Some(COLDPLAY_VIVA_LA_VIDA_LRC.into()),
+                plain: None,
+                is_target: true,
+            }],
             expected_identification: Some(ExpectedIdentification {
                 should_suggest: true,
                 is_swapped: false,
@@ -1645,26 +1615,51 @@ pub fn evaluate_golden_set(
         // ---------------------------------------------------------------------
         // 1. Identification Evaluation
         // ---------------------------------------------------------------------
-        let suggestion = parsed_fn.as_ref().and_then(|p| match_filename_against_tags(&track_model, p));
+        let suggestion = parsed_fn
+            .as_ref()
+            .and_then(|p| match_filename_against_tags(&track_model, p));
         let exp_id = track.expected_identification.as_ref();
 
         match (exp_id, suggestion.as_ref()) {
             (Some(exp), Some(sugg)) => {
-                let artist_matched = similarity(&sugg.suggested_artist, &exp.expected_artist) >= 0.85;
+                let artist_matched =
+                    similarity(&sugg.suggested_artist, &exp.expected_artist) >= 0.85;
                 let title_matched = similarity(&sugg.suggested_title, &exp.expected_title) >= 0.85;
-                let swap_flagged = sugg.reason.contains("swapped") || sugg.reason.contains("Swapped");
+                let swap_flagged =
+                    sugg.reason.contains("swapped") || sugg.reason.contains("Swapped");
 
                 if artist_matched && title_matched && (!exp.is_swapped || swap_flagged) {
                     id_tp += 1;
-                    record_cat(&mut cat_counts, "id_correct_suggestion", true, false, false, false);
+                    record_cat(
+                        &mut cat_counts,
+                        "id_correct_suggestion",
+                        true,
+                        false,
+                        false,
+                        false,
+                    );
                 } else {
                     id_fn += 1;
-                    record_cat(&mut cat_counts, "id_incorrect_suggestion", false, false, false, true);
+                    record_cat(
+                        &mut cat_counts,
+                        "id_incorrect_suggestion",
+                        false,
+                        false,
+                        false,
+                        true,
+                    );
                 }
             }
             (Some(_), None) => {
                 id_fn += 1;
-                record_cat(&mut cat_counts, "id_missed_suggestion", false, false, false, true);
+                record_cat(
+                    &mut cat_counts,
+                    "id_missed_suggestion",
+                    false,
+                    false,
+                    false,
+                    true,
+                );
             }
             (None, Some(sugg)) => {
                 // If no suggestion expected, check if suggestion changed anything or was benign
@@ -1672,21 +1667,45 @@ pub fn evaluate_golden_set(
                 let title_diff = similarity(&sugg.suggested_title, &track.true_title) < 0.90;
                 if artist_diff || title_diff {
                     id_fp += 1;
-                    record_cat(&mut cat_counts, "id_false_suggestion", false, true, false, false);
+                    record_cat(
+                        &mut cat_counts,
+                        "id_false_suggestion",
+                        false,
+                        true,
+                        false,
+                        false,
+                    );
                 } else {
                     id_tn += 1;
-                    record_cat(&mut cat_counts, "id_benign_suggestion", false, false, true, false);
+                    record_cat(
+                        &mut cat_counts,
+                        "id_benign_suggestion",
+                        false,
+                        false,
+                        true,
+                        false,
+                    );
                 }
             }
             (None, None) => {
                 id_tn += 1;
-                record_cat(&mut cat_counts, "id_correct_noop", false, false, true, false);
+                record_cat(
+                    &mut cat_counts,
+                    "id_correct_noop",
+                    false,
+                    false,
+                    true,
+                    false,
+                );
             }
         }
 
         // Test noisy title cleaning
         if track.categories.contains(&GoldenCategory::NoisyTitle) {
-            let candidate_title_string = if track.categories.contains(&GoldenCategory::SwappedArtistTitle) {
+            let candidate_title_string = if track
+                .categories
+                .contains(&GoldenCategory::SwappedArtistTitle)
+            {
                 &track.tag_artist
             } else {
                 &track.tag_title
@@ -1694,16 +1713,31 @@ pub fn evaluate_golden_set(
             let cleaned = clean_title(candidate_title_string);
             let sim = similarity(&cleaned, &track.true_title);
             if sim >= 0.85 {
-                record_cat(&mut cat_counts, "noisy_title_clean_success", true, false, false, false);
+                record_cat(
+                    &mut cat_counts,
+                    "noisy_title_clean_success",
+                    true,
+                    false,
+                    false,
+                    false,
+                );
             } else {
-                record_cat(&mut cat_counts, "noisy_title_clean_failure", false, false, false, true);
+                record_cat(
+                    &mut cat_counts,
+                    "noisy_title_clean_failure",
+                    false,
+                    false,
+                    false,
+                    true,
+                );
             }
         }
 
         // ---------------------------------------------------------------------
         // 2. Candidate Selection Evaluation
         // ---------------------------------------------------------------------
-        let candidates_vec: Vec<Candidate> = track.candidates.iter().map(|c| c.to_candidate()).collect();
+        let candidates_vec: Vec<Candidate> =
+            track.candidates.iter().map(|c| c.to_candidate()).collect();
         // Candidate selection runs with either identified metadata or true metadata
         let (query_artist, query_title) = if let Some(ref sugg) = suggestion {
             (sugg.suggested_artist.clone(), sugg.suggested_title.clone())
@@ -1719,7 +1753,10 @@ pub fn evaluate_golden_set(
         // Filter passing candidates (threshold 0.70 for selection filter)
         let passing_cands: Vec<Candidate> = candidates_vec
             .into_iter()
-            .filter(|c| (c.synced.is_some() || c.plain.is_some()) && score_candidate(&query_track, c).total >= 0.70)
+            .filter(|c| {
+                (c.synced.is_some() || c.plain.is_some())
+                    && score_candidate(&query_track, c).total >= 0.70
+            })
             .collect();
 
         let ranked = evaluate_and_rank_candidates(&query_track, passing_cands);
@@ -1731,28 +1768,66 @@ pub fn evaluate_golden_set(
                     .candidates
                     .iter()
                     .find(|c| c.is_target)
-                    .map(|t| similarity(&sel.candidate.title, &t.title) >= 0.80 && similarity(&sel.candidate.artist, &t.artist) >= 0.80)
+                    .map(|t| {
+                        similarity(&sel.candidate.title, &t.title) >= 0.80
+                            && similarity(&sel.candidate.artist, &t.artist) >= 0.80
+                    })
                     .unwrap_or(false);
 
                 if target_match {
                     sel_tp += 1;
-                    record_cat(&mut cat_counts, "selection_success", true, false, false, false);
+                    record_cat(
+                        &mut cat_counts,
+                        "selection_success",
+                        true,
+                        false,
+                        false,
+                        false,
+                    );
                 } else {
                     sel_fp += 1;
-                    record_cat(&mut cat_counts, "selection_wrong_cand", false, true, false, false);
+                    record_cat(
+                        &mut cat_counts,
+                        "selection_wrong_cand",
+                        false,
+                        true,
+                        false,
+                        false,
+                    );
                 }
             } else {
                 sel_fn += 1;
-                record_cat(&mut cat_counts, "selection_missed", false, false, false, true);
+                record_cat(
+                    &mut cat_counts,
+                    "selection_missed",
+                    false,
+                    false,
+                    false,
+                    true,
+                );
             }
         } else {
             // Instrumental or tracks with no valid lyrics expected
             if selected.is_none() {
                 sel_tn += 1;
-                record_cat(&mut cat_counts, "selection_correct_noop", false, false, true, false);
+                record_cat(
+                    &mut cat_counts,
+                    "selection_correct_noop",
+                    false,
+                    false,
+                    true,
+                    false,
+                );
             } else {
                 sel_fp += 1;
-                record_cat(&mut cat_counts, "selection_false_select", false, true, false, false);
+                record_cat(
+                    &mut cat_counts,
+                    "selection_false_select",
+                    false,
+                    true,
+                    false,
+                    false,
+                );
             }
         }
 
@@ -1760,27 +1835,64 @@ pub fn evaluate_golden_set(
         // 3. Wrong-Song Detection Evaluation
         // ---------------------------------------------------------------------
         let local_text = track.local_lrc.as_deref().unwrap_or("");
-        let candidate_models: Vec<Candidate> = track.candidates.iter().map(|c| c.to_candidate()).collect();
-        let audit = audit_lrc(local_text, track.duration_seconds, &track.true_title, &candidate_models);
+        let candidate_models: Vec<Candidate> =
+            track.candidates.iter().map(|c| c.to_candidate()).collect();
+        let audit = audit_lrc(
+            local_text,
+            track.duration_seconds,
+            &track.true_title,
+            &candidate_models,
+        );
 
-        let detected_wrong_song = audit.issues.iter().any(|i| matches!(i, LrcIssue::WrongSong | LrcIssue::TitleMismatch))
+        let detected_wrong_song = audit
+            .issues
+            .iter()
+            .any(|i| matches!(i, LrcIssue::WrongSong | LrcIssue::TitleMismatch))
             || audit.wrong_song_likelihood >= 0.50;
 
         if track.expected_wrong_song {
             if detected_wrong_song {
                 ws_tp += 1;
-                record_cat(&mut cat_counts, "wrong_song_detected", true, false, false, false);
+                record_cat(
+                    &mut cat_counts,
+                    "wrong_song_detected",
+                    true,
+                    false,
+                    false,
+                    false,
+                );
             } else {
                 ws_fn += 1;
-                record_cat(&mut cat_counts, "wrong_song_missed", false, false, false, true);
+                record_cat(
+                    &mut cat_counts,
+                    "wrong_song_missed",
+                    false,
+                    false,
+                    false,
+                    true,
+                );
             }
         } else {
             if detected_wrong_song {
                 ws_fp += 1;
-                record_cat(&mut cat_counts, "wrong_song_false_positive", false, true, false, false);
+                record_cat(
+                    &mut cat_counts,
+                    "wrong_song_false_positive",
+                    false,
+                    true,
+                    false,
+                    false,
+                );
             } else {
                 ws_tn += 1;
-                record_cat(&mut cat_counts, "wrong_song_correct_negative", false, false, true, false);
+                record_cat(
+                    &mut cat_counts,
+                    "wrong_song_correct_negative",
+                    false,
+                    false,
+                    true,
+                    false,
+                );
             }
         }
 
@@ -1788,17 +1900,34 @@ pub fn evaluate_golden_set(
         // 4. Offset Detection Evaluation
         // ---------------------------------------------------------------------
         let detected_offset = audit.estimated_offset_seconds;
-        let has_offset_issue = audit.issues.iter().any(|i| matches!(i, LrcIssue::Offset(_)));
+        let has_offset_issue = audit
+            .issues
+            .iter()
+            .any(|i| matches!(i, LrcIssue::Offset(_)));
 
         if let Some(expected_off) = track.expected_offset_seconds {
             if let Some(est) = detected_offset {
                 // Must detect offset and be within 0.35s tolerance
                 if has_offset_issue && (est - expected_off).abs() <= 0.35 {
                     off_tp += 1;
-                    record_cat(&mut cat_counts, "offset_detected_accurate", true, false, false, false);
+                    record_cat(
+                        &mut cat_counts,
+                        "offset_detected_accurate",
+                        true,
+                        false,
+                        false,
+                        false,
+                    );
                 } else {
                     off_fn += 1;
-                    record_cat(&mut cat_counts, "offset_inaccurate_or_no_issue", false, false, false, true);
+                    record_cat(
+                        &mut cat_counts,
+                        "offset_inaccurate_or_no_issue",
+                        false,
+                        false,
+                        false,
+                        true,
+                    );
                 }
             } else {
                 off_fn += 1;
@@ -1808,10 +1937,24 @@ pub fn evaluate_golden_set(
             // No offset expected
             if has_offset_issue || detected_offset.is_some() {
                 off_fp += 1;
-                record_cat(&mut cat_counts, "offset_false_alarm", false, true, false, false);
+                record_cat(
+                    &mut cat_counts,
+                    "offset_false_alarm",
+                    false,
+                    true,
+                    false,
+                    false,
+                );
             } else {
                 off_tn += 1;
-                record_cat(&mut cat_counts, "offset_correct_negative", false, false, true, false);
+                record_cat(
+                    &mut cat_counts,
+                    "offset_correct_negative",
+                    false,
+                    false,
+                    true,
+                    false,
+                );
             }
         }
     }
@@ -1906,10 +2049,17 @@ pub fn evaluate_golden_set(
 pub fn format_evaluation_report(report: &GoldenEvaluationReport) -> String {
     let mut out = String::new();
     out.push_str("# Golden Benchmark Evaluation Report\n\n");
-    out.push_str(&format!("**Total Golden Tracks Evaluated**: {}\n", report.total_tracks));
+    out.push_str(&format!(
+        "**Total Golden Tracks Evaluated**: {}\n",
+        report.total_tracks
+    ));
     out.push_str(&format!(
         "**CI Regression Gate**: {}\n\n",
-        if report.passed_ci_gate { "✅ PASSED" } else { "❌ FAILED (Regression Detected)" }
+        if report.passed_ci_gate {
+            "✅ PASSED"
+        } else {
+            "❌ FAILED (Regression Detected)"
+        }
     ));
 
     out.push_str("## Core Capabilities Metrics\n\n");
@@ -1931,10 +2081,16 @@ pub fn format_evaluation_report(report: &GoldenEvaluationReport) -> String {
         )
     };
 
-    out.push_str(&fmt_row("Track Identification", &report.identification_metrics));
+    out.push_str(&fmt_row(
+        "Track Identification",
+        &report.identification_metrics,
+    ));
     out.push_str(&fmt_row("Candidate Selection", &report.selection_metrics));
     out.push_str(&fmt_row("Wrong-Song Detection", &report.wrong_song_metrics));
-    out.push_str(&fmt_row("Offset Detection (+/-1.5s, +/-3.0s)", &report.offset_metrics));
+    out.push_str(&fmt_row(
+        "Offset Detection (+/-1.5s, +/-3.0s)",
+        &report.offset_metrics,
+    ));
     out.push('\n');
 
     out.push_str("## Subcategory Breakdown\n\n");
@@ -1973,7 +2129,11 @@ mod tests {
     #[test]
     fn test_golden_set_builds_thirty_three_tracks() {
         let set = build_golden_set();
-        assert_eq!(set.len(), 33, "Golden set must contain exactly 33 benchmark tracks");
+        assert_eq!(
+            set.len(),
+            33,
+            "Golden set must contain exactly 33 benchmark tracks"
+        );
 
         // Verify each requested category is present
         let mut present_cats = std::collections::HashSet::new();

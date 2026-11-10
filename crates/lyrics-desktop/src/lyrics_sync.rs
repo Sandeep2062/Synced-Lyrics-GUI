@@ -47,11 +47,7 @@ pub(crate) fn update_ui_words(
     window.set_active_words_row2(ModelRc::new(VecModel::from(row2_words)));
 }
 
-pub(crate) fn sync_lyrics_to_position(
-    window: &MainWindow,
-    lines: &[LrcLine],
-    position: f64,
-) {
+pub(crate) fn sync_lyrics_to_position(window: &MainWindow, lines: &[LrcLine], position: f64) {
     let offset_ms = window.get_lyrics_offset_ms() as i64;
     let effective_position = (position + (offset_ms as f64 / 1000.0)).max(0.0);
 

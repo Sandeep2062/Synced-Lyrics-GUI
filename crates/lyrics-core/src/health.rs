@@ -241,7 +241,10 @@ mod tests {
     fn test_parse_offset_from_reason() {
         assert_eq!(parse_offset_from_reason("Offset: +1.50s"), Some(1500));
         assert_eq!(parse_offset_from_reason("Offset: -0.80s"), Some(-800));
-        assert_eq!(parse_offset_from_reason("Adjust offset (+0.50s)"), Some(500));
+        assert_eq!(
+            parse_offset_from_reason("Adjust offset (+0.50s)"),
+            Some(500)
+        );
         assert_eq!(
             parse_offset_from_reason("Words or lines out of order"),
             None

@@ -4,8 +4,8 @@ use lyrics_core::{MutexExt, ThumbnailStore, Track};
 use slint::{Model, ModelRc, VecModel};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Cover artwork
@@ -252,7 +252,11 @@ impl ArtLoader {
                         .thumbs
                         .lock_ignore_poison()
                         .insert(job.key.clone(), thumbnail);
-                    loader.inner.ready.lock_ignore_poison().push((job.key, pixels));
+                    loader
+                        .inner
+                        .ready
+                        .lock_ignore_poison()
+                        .push((job.key, pixels));
                     loader.post_results(&window);
                 }
             });

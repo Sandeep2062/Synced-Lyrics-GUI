@@ -551,7 +551,10 @@ fn compute_line_density(line_count: usize, duration_seconds: Option<f64>) -> f64
     }
 }
 
-pub fn evaluate_and_rank_candidates(track: &Track, candidates: Vec<Candidate>) -> Vec<ScoredCandidate> {
+pub fn evaluate_and_rank_candidates(
+    track: &Track,
+    candidates: Vec<Candidate>,
+) -> Vec<ScoredCandidate> {
     let mut parsed_synced_lines: HashMap<usize, Vec<LrcLine>> = HashMap::new();
     for (i, cand) in candidates.iter().enumerate() {
         if let Some(ref text) = cand.synced {
@@ -570,7 +573,10 @@ pub fn evaluate_and_rank_candidates(track: &Track, candidates: Vec<Candidate>) -
         for j in (i + 1)..synced_indices.len() {
             let idx_a = synced_indices[i];
             let idx_b = synced_indices[j];
-            let (Some(lines_a), Some(lines_b)) = (parsed_synced_lines.get(&idx_a), parsed_synced_lines.get(&idx_b)) else {
+            let (Some(lines_a), Some(lines_b)) = (
+                parsed_synced_lines.get(&idx_a),
+                parsed_synced_lines.get(&idx_b),
+            ) else {
                 continue;
             };
             if let Some(diff) = align_and_compare_timing(lines_a, lines_b) {

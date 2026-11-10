@@ -648,7 +648,10 @@ pub fn apply_offset_tag(text: &str, offset_seconds: f64) -> String {
 
     for line in text.lines() {
         let trimmed = line.trim();
-        if let Some(inner) = trimmed.strip_prefix("[offset:").and_then(|s| s.strip_suffix(']')) {
+        if let Some(inner) = trimmed
+            .strip_prefix("[offset:")
+            .and_then(|s| s.strip_suffix(']'))
+        {
             let clean = inner.replace(' ', "");
             let current_ms = clean.parse::<i64>().unwrap_or(0);
             let new_ms = current_ms + delta_ms;

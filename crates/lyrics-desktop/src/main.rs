@@ -2,8 +2,8 @@
 
 slint::include_modules!();
 
-mod audio_source;
 mod art_loader;
+mod audio_source;
 pub(crate) use art_loader::*;
 mod library_model;
 pub(crate) use library_model::*;
@@ -24,8 +24,6 @@ use lyrics_core::{load_settings, AudioEngine, LrcLine};
 use slint::{Model, ModelRc, VecModel};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-
 
 // ---------------------------------------------------------------------------
 // Main
@@ -110,7 +108,6 @@ fn main() -> Result<(), slint::PlatformError> {
     // -----------------------------------------------------------------------
     wire_search_and_filters(&window, &app_state, &art_loader);
 
-
     // -----------------------------------------------------------------------
     // Lyrics: synchronization, offsets, clipboard & fixing
     // -----------------------------------------------------------------------
@@ -128,12 +125,10 @@ fn main() -> Result<(), slint::PlatformError> {
     // -----------------------------------------------------------------------
     wire_album_and_artist_views(&window, &app_state, &art_loader);
 
-
     // -----------------------------------------------------------------------
     // Settings and Updates
     // -----------------------------------------------------------------------
     wire_settings_and_updates(&window);
-
 
     window.run()
 }
@@ -145,4 +140,3 @@ pub(crate) mod ui_snapshot;
 
 #[cfg(test)]
 mod headless_tests;
-

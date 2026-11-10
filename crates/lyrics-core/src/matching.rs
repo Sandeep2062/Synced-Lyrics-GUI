@@ -260,7 +260,10 @@ fn strip_inline_feature_or_producer(s: &str) -> String {
     for (byte_idx, _) in s.char_indices() {
         let suffix = &s[byte_idx..];
         for kw in &keywords {
-            if suffix.get(..kw.len()).is_some_and(|sub| sub.eq_ignore_ascii_case(kw)) {
+            if suffix
+                .get(..kw.len())
+                .is_some_and(|sub| sub.eq_ignore_ascii_case(kw))
+            {
                 cut_index = Some(cut_index.map_or(byte_idx, |cur: usize| cur.min(byte_idx)));
             }
         }

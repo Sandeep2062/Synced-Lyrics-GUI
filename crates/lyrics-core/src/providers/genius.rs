@@ -296,7 +296,10 @@ mod tests {
         let multi_json = include_str!("../../tests/fixtures/genius/bohemian_rhapsody_search.json");
         let payload: MultiSearchResponse = serde_json::from_str(multi_json).unwrap();
         let sections = payload.response.unwrap().sections.unwrap();
-        let song_sec = sections.into_iter().find(|s| s.section_type.as_deref() == Some("song")).unwrap();
+        let song_sec = sections
+            .into_iter()
+            .find(|s| s.section_type.as_deref() == Some("song"))
+            .unwrap();
         let hits = song_sec.hits.unwrap();
         assert!(!hits.is_empty());
         assert_eq!(hits[0].result.title.as_deref(), Some("Bohemian Rhapsody"));

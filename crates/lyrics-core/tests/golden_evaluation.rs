@@ -6,7 +6,11 @@ use lyrics_core::golden::{
 #[test]
 fn test_golden_set_regression_gate() {
     let tracks = build_golden_set();
-    assert_eq!(tracks.len(), 33, "Golden set must contain exactly 33 tracks");
+    assert_eq!(
+        tracks.len(),
+        33,
+        "Golden set must contain exactly 33 tracks"
+    );
 
     let thresholds = GoldenThresholds::default();
     let report = evaluate_golden_set(&tracks, &thresholds);
@@ -41,10 +45,7 @@ fn test_golden_set_category_coverage() {
     ];
 
     for cat in &all_categories {
-        let count = tracks
-            .iter()
-            .filter(|t| t.categories.contains(cat))
-            .count();
+        let count = tracks.iter().filter(|t| t.categories.contains(cat)).count();
         assert!(
             count >= 2,
             "Category {:?} has insufficient representation: found {}",

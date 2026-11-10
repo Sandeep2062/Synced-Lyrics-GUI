@@ -5,8 +5,8 @@ use crate::lyrics_sync::*;
 use crate::MainWindow;
 use lofty::prelude::AudioFile;
 use lyrics_core::{
-    find_active_line_index, find_active_word_index, AudioEngine, MutexExt, Track,
-    WaveformStore, LrcLine,
+    find_active_line_index, find_active_word_index, AudioEngine, LrcLine, MutexExt, Track,
+    WaveformStore,
 };
 use rodio::Source;
 use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
@@ -212,7 +212,12 @@ pub(crate) fn write_waveform_bars(model: &VecModel<f32>, values: &[f32]) {
 }
 
 /// The bars to draw for `progress` (0..1) through the track.
-pub(crate) fn reactive_bars(envelope: &[f32], progress: f32, level: f32, playing: bool) -> Vec<f32> {
+pub(crate) fn reactive_bars(
+    envelope: &[f32],
+    progress: f32,
+    level: f32,
+    playing: bool,
+) -> Vec<f32> {
     let mut bars = envelope_bars(envelope, WAVEFORM_BARS);
     if !playing {
         return bars;
@@ -249,7 +254,6 @@ pub(crate) fn compute_audio_waveform(audio_path: &str) -> Vec<f32> {
         synthetic_shape(ENVELOPE_BUCKETS)
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Track setup & waveform loading
@@ -367,7 +371,10 @@ pub(crate) fn prefetch_track_waveform(track: &Track, waveform_cache: &WaveformCa
     });
 }
 
-pub(crate) fn prefetch_next_track(app_state: &Arc<Mutex<AppState>>, waveform_cache: &WaveformCacheMap) {
+pub(crate) fn prefetch_next_track(
+    app_state: &Arc<Mutex<AppState>>,
+    waveform_cache: &WaveformCacheMap,
+) {
     let next_track = {
         let Ok(s) = app_state.lock() else { return };
         if s.filtered_tracks.is_empty() {
@@ -538,9 +545,13 @@ pub(crate) fn wire_track_triggers(
             let Some(w) = weak.upgrade() else { return };
             let Ok(mut s) = state.lock() else { return };
             let row = row_idx as usize;
-            let Some(&track_idx) = s.filtered_tracks.get(row) else { return };
+            let Some(&track_idx) = s.filtered_tracks.get(row) else {
+                return;
+            };
             s.current_filtered_row = Some(row);
-            let Some(track) = s.all_tracks.get(track_idx).cloned() else { return };
+            let Some(track) = s.all_tracks.get(track_idx).cloned() else {
+                return;
+            };
             drop(s);
             setup_track_for_playback(&track, &w, &engine, &lyrics, &cache, &wf_cache, true);
             prefetch_next_track(&state, &wf_cache);
@@ -557,9 +568,13 @@ pub(crate) fn wire_track_triggers(
             let Some(w) = weak.upgrade() else { return };
             let Ok(mut s) = state.lock() else { return };
             let row = row_idx as usize;
-            let Some(&track_idx) = s.filtered_tracks.get(row) else { return };
+            let Some(&track_idx) = s.filtered_tracks.get(row) else {
+                return;
+            };
             s.current_filtered_row = Some(row);
-            let Some(track) = s.all_tracks.get(track_idx).cloned() else { return };
+            let Some(track) = s.all_tracks.get(track_idx).cloned() else {
+                return;
+            };
             drop(s);
             setup_track_for_playback(&track, &w, &engine, &lyrics, &cache, &wf_cache, true);
             prefetch_next_track(&state, &wf_cache);
@@ -576,9 +591,13 @@ pub(crate) fn wire_track_triggers(
             let Some(w) = weak.upgrade() else { return };
             let Ok(mut s) = state.lock() else { return };
             let row = row_idx as usize;
-            let Some(&track_idx) = s.filtered_tracks.get(row) else { return };
+            let Some(&track_idx) = s.filtered_tracks.get(row) else {
+                return;
+            };
             s.current_filtered_row = Some(row);
-            let Some(track) = s.all_tracks.get(track_idx).cloned() else { return };
+            let Some(track) = s.all_tracks.get(track_idx).cloned() else {
+                return;
+            };
             drop(s);
             setup_track_for_playback(&track, &w, &engine, &lyrics, &cache, &wf_cache, true);
             prefetch_next_track(&state, &wf_cache);
@@ -802,8 +821,12 @@ pub(crate) fn start_playback_timer(
 
     let position_timer = Timer::default();
     position_timer.start(TimerMode::Repeated, Duration::from_millis(33), move || {
-        let Some(window) = timer_window.upgrade() else { return };
-        let Ok(engine) = timer_audio.lock() else { return };
+        let Some(window) = timer_window.upgrade() else {
+            return;
+        };
+        let Ok(engine) = timer_audio.lock() else {
+            return;
+        };
         let position_opt = engine.position_seconds();
         let duration = engine.duration_seconds().unwrap_or(0.0);
         let playing = engine.is_playing();
@@ -892,9 +915,30 @@ pub(crate) fn wire_playback(
     art_loader: &Arc<ArtLoader>,
     waveform_cache: &WaveformCacheMap,
 ) -> Timer {
-    wire_track_triggers(window, app_state, audio, lyric_state, art_loader, waveform_cache);
-    wire_transport_controls(window, app_state, audio, lyric_state, art_loader, waveform_cache);
-    start_playback_timer(window, app_state, audio, lyric_state, art_loader, waveform_cache)
+    wire_track_triggers(
+        window,
+        app_state,
+        audio,
+        lyric_state,
+        art_loader,
+        waveform_cache,
+    );
+    wire_transport_controls(
+        window,
+        app_state,
+        audio,
+        lyric_state,
+        art_loader,
+        waveform_cache,
+    );
+    start_playback_timer(
+        window,
+        app_state,
+        audio,
+        lyric_state,
+        art_loader,
+        waveform_cache,
+    )
 }
 
 #[cfg(test)]

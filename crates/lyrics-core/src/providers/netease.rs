@@ -215,7 +215,8 @@ mod tests {
 
     #[test]
     fn parses_real_fixtures() {
-        let search_json = include_str!("../../tests/fixtures/netease/bohemian_rhapsody_search.json");
+        let search_json =
+            include_str!("../../tests/fixtures/netease/bohemian_rhapsody_search.json");
         let search: NeteaseSearchResponse = serde_json::from_str(search_json).unwrap();
         let songs = search.result.unwrap().songs.unwrap();
         assert!(!songs.is_empty());
@@ -223,7 +224,11 @@ mod tests {
 
         let lyric_json = include_str!("../../tests/fixtures/netease/bohemian_rhapsody_lyric.json");
         let lyrics: serde_json::Value = serde_json::from_str(lyric_json).unwrap();
-        let text = lyrics.get("lrc").and_then(|l| l.get("lyric")).and_then(|t| t.as_str()).unwrap();
+        let text = lyrics
+            .get("lrc")
+            .and_then(|l| l.get("lyric"))
+            .and_then(|t| t.as_str())
+            .unwrap();
         assert!(text.contains("00:"));
     }
 
@@ -323,6 +328,9 @@ mod tests {
         // Test strip_timestamps on malformed input
         assert_eq!(strip_timestamps(""), "");
         assert_eq!(strip_timestamps("[not a timestamp"), "[not a timestamp");
-        assert_eq!(strip_timestamps("[00:01]First\n[00:02]Second"), "First\nSecond");
+        assert_eq!(
+            strip_timestamps("[00:01]First\n[00:02]Second"),
+            "First\nSecond"
+        );
     }
 }

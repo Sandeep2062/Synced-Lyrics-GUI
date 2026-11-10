@@ -126,8 +126,14 @@ impl LyricsProvider for MegalobizProvider {
 
             if let Some(lrc_text) = lrc_data.lrc.filter(|t| !t.trim().is_empty()) {
                 candidates.push(Candidate {
-                    title: item.title.or(lrc_data.title).unwrap_or_else(|| track.title.clone()),
-                    artist: item.artist.or(lrc_data.artist).unwrap_or_else(|| track.artist.clone()),
+                    title: item
+                        .title
+                        .or(lrc_data.title)
+                        .unwrap_or_else(|| track.title.clone()),
+                    artist: item
+                        .artist
+                        .or(lrc_data.artist)
+                        .unwrap_or_else(|| track.artist.clone()),
                     album: None,
                     duration_seconds: item.duration.or(lrc_data.duration),
                     synced: Some(lrc_text),
@@ -191,7 +197,8 @@ mod tests {
 
     #[test]
     fn parses_megalobiz_search_and_lrc_fixtures() {
-        let search_json = include_str!("../../tests/fixtures/megalobiz/bohemian_rhapsody_search.json");
+        let search_json =
+            include_str!("../../tests/fixtures/megalobiz/bohemian_rhapsody_search.json");
         let search_res: MegalobizSearchResponse = serde_json::from_str(search_json).unwrap();
         assert_eq!(search_res.count, Some(10));
         let results = search_res.results.unwrap();
@@ -209,7 +216,11 @@ mod tests {
 
     #[test]
     fn handles_empty_or_malformed_json() {
-        let malformed = ["{}", r#"{"results": []}"#, r#"{"count": 0, "results": null}"#];
+        let malformed = [
+            "{}",
+            r#"{"results": []}"#,
+            r#"{"count": 0, "results": null}"#,
+        ];
         for s in malformed {
             let res = serde_json::from_str::<MegalobizSearchResponse>(s);
             assert!(res.is_ok());

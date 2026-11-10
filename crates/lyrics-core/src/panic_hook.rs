@@ -13,9 +13,8 @@ use std::time::SystemTime;
 pub fn setup_panic_hook() {
     let next_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info: &PanicHookInfo<'_>| {
-        let log_dir = app_data_dir().unwrap_or_else(|_| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        });
+        let log_dir = app_data_dir()
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
         let _ = log_panic_to_dir(info, &log_dir);
         next_hook(info);
     }));
@@ -60,7 +59,10 @@ pub fn log_panic_to_dir(info: &PanicHookInfo<'_>, dir: &Path) -> Result<PathBuf,
         timestamp, thread_name, location, payload, backtrace
     );
 
-    let mut file = OpenOptions::new().create(true).append(true).open(&log_path)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
     file.write_all(report.as_bytes())?;
     file.flush()?;
 
@@ -104,7 +106,10 @@ mod tests {
         panic::set_hook(old_hook);
 
         let written_path = recorded_path.lock().unwrap().take();
-        assert!(written_path.is_some(), "Panic log path should have been recorded");
+        assert!(
+            written_path.is_some(),
+            "Panic log path should have been recorded"
+        );
         let path = written_path.unwrap();
         assert!(path.exists(), "panic.log file must exist");
 

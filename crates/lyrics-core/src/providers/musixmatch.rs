@@ -538,7 +538,10 @@ mod tests {
         // Test strip_timestamps on malformed inputs
         assert_eq!(strip_timestamps(""), "");
         assert_eq!(strip_timestamps("no timestamp line"), "no timestamp line");
-        assert_eq!(strip_timestamps("[incomplete\n[00:01.00]Valid"), "[incomplete\nValid");
+        assert_eq!(
+            strip_timestamps("[incomplete\n[00:01.00]Valid"),
+            "[incomplete\nValid"
+        );
         assert_eq!(strip_timestamps("[00:01][00:02]Multiple"), "Multiple");
         assert_eq!(strip_timestamps("[\u{1F525}]Emoji\n\u{3000}"), "Emoji");
     }

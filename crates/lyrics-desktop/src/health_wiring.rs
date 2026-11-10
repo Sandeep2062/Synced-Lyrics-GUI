@@ -5,9 +5,9 @@ use crate::{HealthResultLog, HealthTrackRow, MainWindow, PreviewDiffItem};
 use lyrics_core::{
     apply_offset_to_lrc, compute_health_summary, download_track_dry_run,
     download_track_with_options, generate_unified_diff, load_settings, parse_offset_from_reason,
-    save_settings, write_atomic_with_backup, AppSettings, BatchJobItemDraft,
-    BatchJobItemRecord, BatchJobRecord, DownloadMode, DownloadOptions, DownloadOutcome,
-    HealthCategory, HealthIssue, LibraryDb, LyricsStatus, Track,
+    save_settings, write_atomic_with_backup, AppSettings, BatchJobItemDraft, BatchJobItemRecord,
+    BatchJobRecord, DownloadMode, DownloadOptions, DownloadOutcome, HealthCategory, HealthIssue,
+    LibraryDb, LyricsStatus, Track,
 };
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::fs;
@@ -370,7 +370,9 @@ pub(crate) fn wire_health_preview(window: &MainWindow, app_state: &Arc<Mutex<App
             }
 
             let Ok(db) = open_database() else { return };
-            let Ok(settings) = load_settings() else { return };
+            let Ok(settings) = load_settings() else {
+                return;
+            };
 
             let event_loop = w.as_weak();
             thread::spawn(move || {
@@ -424,9 +426,13 @@ pub(crate) fn wire_health_preview(window: &MainWindow, app_state: &Arc<Mutex<App
                 .collect();
             drop(s);
 
-            let Some(issue) = filtered_issues.get(idx as usize).cloned() else { return };
+            let Some(issue) = filtered_issues.get(idx as usize).cloned() else {
+                return;
+            };
             let Ok(db) = open_database() else { return };
-            let Ok(settings) = load_settings() else { return };
+            let Ok(settings) = load_settings() else {
+                return;
+            };
 
             let event_loop = w.as_weak();
             thread::spawn(move || {
@@ -469,7 +475,9 @@ fn spawn_apply_fixes_job(
     let total = preview_items.len();
     thread::spawn(move || {
         let Ok(db) = open_database() else { return };
-        let Ok(settings) = load_settings() else { return };
+        let Ok(settings) = load_settings() else {
+            return;
+        };
         let mut was_cancelled = false;
 
         for (idx, item) in preview_items.into_iter().enumerate() {
@@ -531,7 +539,11 @@ fn spawn_apply_fixes_job(
                 let offset_ms = parse_offset_from_reason(&item.action_label).unwrap_or(0);
                 let new_text = apply_offset_to_lrc(&old_text, offset_ms);
                 if write_atomic_with_backup(&lrc_path, &new_text, backup_enabled).is_ok() {
-                    let _ = db.update_lyrics_status(&audio_path, LyricsStatus::Synced, Some("Internal"));
+                    let _ = db.update_lyrics_status(
+                        &audio_path,
+                        LyricsStatus::Synced,
+                        Some("Internal"),
+                    );
                     is_success = true;
                 }
             } else {
@@ -547,11 +559,23 @@ fn spawn_apply_fixes_job(
 
                 if let Ok(providers) = providers_for_settings(&db, &track, &settings) {
                     if let Ok(DownloadOutcome::Downloaded { provider, synced }) =
-                        download_track_with_options(&track, mode, &providers, &cancelled, dl_opts, |_| {})
+                        download_track_with_options(
+                            &track,
+                            mode,
+                            &providers,
+                            &cancelled,
+                            dl_opts,
+                            |_| {},
+                        )
                     {
                         chosen_provider = provider.label().to_string();
-                        let status = if synced { LyricsStatus::Synced } else { LyricsStatus::Plain };
-                        let _ = db.update_lyrics_status(&audio_path, status, Some(provider.label()));
+                        let status = if synced {
+                            LyricsStatus::Synced
+                        } else {
+                            LyricsStatus::Plain
+                        };
+                        let _ =
+                            db.update_lyrics_status(&audio_path, status, Some(provider.label()));
                         is_success = true;
                     }
                 }
@@ -570,7 +594,11 @@ fn spawn_apply_fixes_job(
             );
         }
 
-        let final_status = if was_cancelled { "cancelled" } else { "completed" };
+        let final_status = if was_cancelled {
+            "cancelled"
+        } else {
+            "completed"
+        };
         let _ = db.update_batch_job_status(job_id, final_status);
 
         let el = event_loop.clone();
@@ -610,7 +638,9 @@ fn spawn_resume_job(
 
     thread::spawn(move || {
         let Ok(db) = open_database() else { return };
-        let Ok(settings) = load_settings() else { return };
+        let Ok(settings) = load_settings() else {
+            return;
+        };
         let mut was_cancelled = false;
 
         for (offset, item) in pending_items.into_iter().enumerate() {
@@ -633,7 +663,12 @@ fn spawn_resume_job(
             let el = event_loop.clone();
             let cur_title = format!("{} — {}", item.artist, item.title);
             let prog = cur_idx as f32 / total as f32;
-            let prog_text = format!("{}/{} ({} remaining)", cur_idx, total, total.saturating_sub(cur_idx));
+            let prog_text = format!(
+                "{}/{} ({} remaining)",
+                cur_idx,
+                total,
+                total.saturating_sub(cur_idx)
+            );
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = el.upgrade() {
                     w.set_health_current_track_text(cur_title.into());
@@ -658,17 +693,40 @@ fn spawn_resume_job(
                 lyrics_offset_ms: 0,
             };
 
-            let mut chosen_provider = item.provider.clone().unwrap_or_else(|| "LRCLIB".to_string());
+            let mut chosen_provider = item
+                .provider
+                .clone()
+                .unwrap_or_else(|| "LRCLIB".to_string());
             let mut chosen_score = item.score.unwrap_or(0.95);
-            let chosen_reason = item.selection_reason.clone().unwrap_or_else(|| "Resumed batch fix".to_string());
+            let chosen_reason = item
+                .selection_reason
+                .clone()
+                .unwrap_or_else(|| "Resumed batch fix".to_string());
             let mut is_success = false;
 
-            if item.issue_reason.as_deref().unwrap_or("").starts_with("Offset") {
+            if item
+                .issue_reason
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("Offset")
+            {
                 let old_text = fs::read_to_string(&lrc_path).unwrap_or_default();
-                let offset_ms = parse_offset_from_reason(item.issue_reason.as_deref().unwrap_or("")).unwrap_or(0);
+                let offset_ms =
+                    parse_offset_from_reason(item.issue_reason.as_deref().unwrap_or(""))
+                        .unwrap_or(0);
                 let new_text = apply_offset_to_lrc(&old_text, offset_ms);
-                if write_atomic_with_backup(std::path::Path::new(&lrc_path), &new_text, backup_enabled).is_ok() {
-                    let _ = db.update_lyrics_status(&audio_path, LyricsStatus::Synced, Some("Internal"));
+                if write_atomic_with_backup(
+                    std::path::Path::new(&lrc_path),
+                    &new_text,
+                    backup_enabled,
+                )
+                .is_ok()
+                {
+                    let _ = db.update_lyrics_status(
+                        &audio_path,
+                        LyricsStatus::Synced,
+                        Some("Internal"),
+                    );
                     chosen_provider = "Internal".to_string();
                     chosen_score = 1.0;
                     is_success = true;
@@ -681,11 +739,23 @@ fn spawn_resume_job(
 
                 if let Ok(providers) = providers_for_settings(&db, &track, &settings) {
                     if let Ok(DownloadOutcome::Downloaded { provider, synced }) =
-                        download_track_with_options(&track, DownloadMode::SmartUpdate, &providers, &cancelled, dl_opts, |_| {})
+                        download_track_with_options(
+                            &track,
+                            DownloadMode::SmartUpdate,
+                            &providers,
+                            &cancelled,
+                            dl_opts,
+                            |_| {},
+                        )
                     {
                         chosen_provider = provider.label().to_string();
-                        let status = if synced { LyricsStatus::Synced } else { LyricsStatus::Plain };
-                        let _ = db.update_lyrics_status(&audio_path, status, Some(provider.label()));
+                        let status = if synced {
+                            LyricsStatus::Synced
+                        } else {
+                            LyricsStatus::Plain
+                        };
+                        let _ =
+                            db.update_lyrics_status(&audio_path, status, Some(provider.label()));
                         is_success = true;
                     }
                 }
@@ -704,7 +774,11 @@ fn spawn_resume_job(
             );
         }
 
-        let final_status = if was_cancelled { "cancelled" } else { "completed" };
+        let final_status = if was_cancelled {
+            "cancelled"
+        } else {
+            "completed"
+        };
         let _ = db.update_batch_job_status(job_id, final_status);
 
         let el = event_loop.clone();
@@ -768,8 +842,10 @@ pub(crate) fn wire_health_batch_controls(
             let Some(w) = weak.upgrade() else { return };
             if let Ok(mut lock) = job_ctrl.lock() {
                 if let Some(ref job) = *lock {
-                    job.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
-                    job.paused.store(false, std::sync::atomic::Ordering::Relaxed);
+                    job.cancelled
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    job.paused
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
                 }
                 *lock = None;
             }
@@ -800,7 +876,9 @@ pub(crate) fn wire_health_batch_runner(
                 (0..count).filter_map(|i| model.row_data(i)).collect()
             };
 
-            if preview_items.is_empty() { return; }
+            if preview_items.is_empty() {
+                return;
+            }
 
             let Ok(db) = open_database() else { return };
             let backup_enabled = w.get_settings_backup_before_overwrite();
@@ -821,7 +899,9 @@ pub(crate) fn wire_health_batch_runner(
                 })
                 .collect();
 
-            let Ok(job_id) = db.create_batch_job("fix_safe_issues", "safe_issues", &drafts) else { return };
+            let Ok(job_id) = db.create_batch_job("fix_safe_issues", "safe_issues", &drafts) else {
+                return;
+            };
 
             let cancelled = Arc::new(AtomicBool::new(false));
             let paused = Arc::new(AtomicBool::new(false));
@@ -858,8 +938,12 @@ pub(crate) fn wire_health_batch_runner(
         window.on_health_resume_batch(move || {
             let Some(w) = weak.upgrade() else { return };
             let Ok(db) = open_database() else { return };
-            let Ok(Some(job)) = db.get_resumable_batch_job() else { return };
-            let Ok(pending_items) = db.get_pending_batch_job_items(job.id) else { return };
+            let Ok(Some(job)) = db.get_resumable_batch_job() else {
+                return;
+            };
+            let Ok(pending_items) = db.get_pending_batch_job_items(job.id) else {
+                return;
+            };
             if pending_items.is_empty() {
                 let _ = db.update_batch_job_status(job.id, "completed");
                 w.set_health_has_resumable_job(false);
