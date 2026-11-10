@@ -9,7 +9,11 @@
 //! gate: an unthemed widget or a drifted layout fails the build instead of
 //! shipping quietly.
 //!
-//! Run with: `cargo test -p lyrics-desktop ui_snapshot -- --nocapture`
+//! Slint's global platform can only be created once per process and only from the
+//! thread that initialised it, so this gate is driven from the single window-owning
+//! test in `headless_tests` rather than from its own `#[test]`.
+//!
+//! Run with: `cargo test -p lyrics-desktop test_all_headless_features -- --nocapture`
 
 #![allow(dead_code)]
 
@@ -268,7 +272,9 @@ pub(crate) fn worst_case_tracks(count: usize) -> Vec<TrackData> {
         .map(|idx| {
             let (t_title, t_artist, t_album, t_dur, t_status) = templates[idx % templates.len()];
             TrackData {
-                path: SharedString::from(format!("C:\\Music\\{idx:05} - {t_artist} - {t_title}.mp3")),
+                path: SharedString::from(format!(
+                    "C:\\Music\\{idx:05} - {t_artist} - {t_title}.mp3"
+                )),
                 artist: SharedString::from(t_artist),
                 title: SharedString::from(t_title),
                 album: SharedString::from(t_album),
@@ -506,11 +512,26 @@ fn worst_case_diff_items() -> Vec<PreviewDiffItem> {
 
 fn worst_case_providers() -> Vec<ProviderStatus> {
     vec![
-        ProviderStatus { name: SharedString::from("LRCLib"), status: SharedString::from("searching") },
-        ProviderStatus { name: SharedString::from("Musixmatch"), status: SharedString::from("found") },
-        ProviderStatus { name: SharedString::from("NetEase"), status: SharedString::from("searching") },
-        ProviderStatus { name: SharedString::from("Megalobiz"), status: SharedString::from("not-found") },
-        ProviderStatus { name: SharedString::from("Genius"), status: SharedString::from("rate-limited") },
+        ProviderStatus {
+            name: SharedString::from("LRCLib"),
+            status: SharedString::from("searching"),
+        },
+        ProviderStatus {
+            name: SharedString::from("Musixmatch"),
+            status: SharedString::from("found"),
+        },
+        ProviderStatus {
+            name: SharedString::from("NetEase"),
+            status: SharedString::from("searching"),
+        },
+        ProviderStatus {
+            name: SharedString::from("Megalobiz"),
+            status: SharedString::from("not-found"),
+        },
+        ProviderStatus {
+            name: SharedString::from("Genius"),
+            status: SharedString::from("rate-limited"),
+        },
     ]
 }
 
@@ -682,8 +703,7 @@ fn audit_frame(frame: &Frame, name: &str, report: &mut Report) {
 
 const SIZES: [(u32, u32); 3] = [(960, 600), (1280, 820), (1920, 1080)];
 
-#[test]
-fn ui_snapshot() {
+pub(crate) fn run_snapshot_gate() {
     let mut report = Report::default();
 
     with_app(5_000, |ui| {
@@ -717,7 +737,13 @@ fn ui_snapshot() {
             let row_y1 = 200.min(h - PLAYER_HEIGHT);
             let col1 = Rect::new(0, w - 310, row_y0, row_y1);
             let col2 = Rect::new(w - 305, w - 180, row_y0, row_y1);
-            f_tracks.check_regions_no_overlap(col1, col2, 4, &format!("[{name_tracks}] tracks title vs status column"), &mut report);
+            f_tracks.check_regions_no_overlap(
+                col1,
+                col2,
+                4,
+                &format!("[{name_tracks}] tracks title vs status column"),
+                &mut report,
+            );
 
             // View 1b: Tracks Empty
             ui.set_tracks(ModelRc::new(VecModel::from(Vec::<TrackData>::new())));
@@ -727,7 +753,15 @@ fn ui_snapshot() {
             audit_frame(&f_tracks_empty, &name_tracks_empty, &mut report);
             let empty_y0 = 260;
             let empty_y1 = h.saturating_sub(100);
-            check_region_centred(&f_tracks_empty, &mut report, &name_tracks_empty, 0, w, empty_y0, empty_y1);
+            check_region_centred(
+                &f_tracks_empty,
+                &mut report,
+                &name_tracks_empty,
+                0,
+                w,
+                empty_y0,
+                empty_y1,
+            );
             // Restore 10k tracks
             ui.set_tracks(ModelRc::new(VecModel::from(worst_case_tracks(10_000))));
             ui.set_tracks_summary("10000 tracks | 5000 synced | 2000 plain | 3000 missing".into());
@@ -754,7 +788,15 @@ fn ui_snapshot() {
             audit_frame(&f_albums_empty, &name_albums_empty, &mut report);
             let empty_y0 = 260;
             let empty_y1 = h.saturating_sub(100);
-            check_region_centred(&f_albums_empty, &mut report, &name_albums_empty, 0, w, empty_y0, empty_y1);
+            check_region_centred(
+                &f_albums_empty,
+                &mut report,
+                &name_albums_empty,
+                0,
+                w,
+                empty_y0,
+                empty_y1,
+            );
             ui.set_albums(ModelRc::new(VecModel::from(worst_case_albums())));
             ui.set_album_rows(ModelRc::new(VecModel::from(crate::album_rows(24))));
 
@@ -827,7 +869,12 @@ fn ui_snapshot() {
             let modal_h = 620.min(view_h.saturating_sub(32));
             let modal_y0 = HEADER_HEIGHT + (view_h.saturating_sub(modal_h)) / 2;
             let modal_y1 = modal_y0 + modal_h;
-            f_health_diff.check_text_outside_container(Rect::new(modal_x0, modal_x1, modal_y0, modal_y1), 20, &format!("[{name_health_diff}] health diff modal bounds"), &mut report);
+            f_health_diff.check_text_outside_container(
+                Rect::new(modal_x0, modal_x1, modal_y0, modal_y1),
+                20,
+                &format!("[{name_health_diff}] health diff modal bounds"),
+                &mut report,
+            );
             ui.set_health_preview_modal_open(false);
 
             // View 4d: Health Empty
@@ -872,7 +919,8 @@ fn ui_snapshot() {
             ui.set_downloads_is_active(false);
             ui.set_downloads_current_track(SharedString::new());
             let name_downloads_empty = format!("view-06b-downloads-empty-{width}");
-            let f_downloads_empty = capture_sized(&name_downloads_empty, width, height, &mut report);
+            let f_downloads_empty =
+                capture_sized(&name_downloads_empty, width, height, &mut report);
             audit_frame(&f_downloads_empty, &name_downloads_empty, &mut report);
             ui.set_downloads_logs(ModelRc::new(VecModel::from(worst_case_download_logs())));
 
@@ -907,7 +955,13 @@ fn ui_snapshot() {
             // Left column (28..408) vs right lyrics column (430..w-28)
             let left_np = Rect::new(28, 408, 60, h.saturating_sub(30));
             let lyrics_np = Rect::new(430, w.saturating_sub(28), 60, h.saturating_sub(30));
-            f_now_playing.check_regions_no_overlap(left_np, lyrics_np, 10, &format!("[{name_now_playing}] now-playing left vs lyrics"), &mut report);
+            f_now_playing.check_regions_no_overlap(
+                left_np,
+                lyrics_np,
+                10,
+                &format!("[{name_now_playing}] now-playing left vs lyrics"),
+                &mut report,
+            );
             ui.set_now_playing_visible(false);
 
             // ---------------------------------------------------------------
@@ -920,12 +974,32 @@ fn ui_snapshot() {
             let f_queue = capture_sized(&name_queue, width, height, &mut report);
             audit_frame(&f_queue, &name_queue, &mut report);
             let queue_rect = Rect::new(w.saturating_sub(340), w, 0, h);
-            f_queue.check_not_clipped_at_boundary(queue_rect, &format!("[{name_queue}] queue drawer right boundary"), &mut report);
+            f_queue.check_not_clipped_at_boundary(
+                queue_rect,
+                &format!("[{name_queue}] queue drawer right boundary"),
+                &mut report,
+            );
             let q_item_y0 = 150;
             let q_item_y1 = 200;
-            let q_title_rect = Rect::new(w.saturating_sub(340) + 50, w.saturating_sub(70), q_item_y0, q_item_y1);
-            let q_dur_rect = Rect::new(w.saturating_sub(60), w.saturating_sub(10), q_item_y0, q_item_y1);
-            f_queue.check_regions_no_overlap(q_title_rect, q_dur_rect, 4, &format!("[{name_queue}] queue item title vs duration"), &mut report);
+            let q_title_rect = Rect::new(
+                w.saturating_sub(340) + 50,
+                w.saturating_sub(70),
+                q_item_y0,
+                q_item_y1,
+            );
+            let q_dur_rect = Rect::new(
+                w.saturating_sub(60),
+                w.saturating_sub(10),
+                q_item_y0,
+                q_item_y1,
+            );
+            f_queue.check_regions_no_overlap(
+                q_title_rect,
+                q_dur_rect,
+                4,
+                &format!("[{name_queue}] queue item title vs duration"),
+                &mut report,
+            );
 
             // View 9b: Queue Drawer Empty
             ui.set_queue_tracks(ModelRc::new(VecModel::from(Vec::<TrackData>::new())));
@@ -945,7 +1019,11 @@ fn ui_snapshot() {
             let f_lyrics_synced = capture_sized(&name_lyrics_synced, width, height, &mut report);
             audit_frame(&f_lyrics_synced, &name_lyrics_synced, &mut report);
             let lyrics_rect = Rect::new(w.saturating_sub(390), w, 0, h);
-            f_lyrics_synced.check_not_clipped_at_boundary(lyrics_rect, &format!("[{name_lyrics_synced}] lyrics panel right boundary"), &mut report);
+            f_lyrics_synced.check_not_clipped_at_boundary(
+                lyrics_rect,
+                &format!("[{name_lyrics_synced}] lyrics panel right boundary"),
+                &mut report,
+            );
 
             // View 10b: Lyrics Plain Text
             ui.set_lyrics_status("plain".into());
@@ -966,10 +1044,16 @@ fn ui_snapshot() {
             ui.set_lyrics_status("missing".into());
             ui.set_lyrics_has_identification_suggestion(true);
             ui.set_lyrics_suggested_title("🎵🔥 殘響散歌 / 鬼滅の刃 遊郭編 音楽鑑賞用超長尺曲名テスト 90-Character Multilingual Extreme Stress Test Title 123456789".into());
-            ui.set_lyrics_suggested_artist("Aimer (エメ) & International Symphony Orchestra Multilingual 90".into());
-            ui.set_lyrics_suggested_album("Zankyo Sanka Deluxe Extended Edition with 100 Bonus Tracks 90".into());
+            ui.set_lyrics_suggested_artist(
+                "Aimer (エメ) & International Symphony Orchestra Multilingual 90".into(),
+            );
+            ui.set_lyrics_suggested_album(
+                "Zankyo Sanka Deluxe Extended Edition with 100 Bonus Tracks 90".into(),
+            );
             ui.set_lyrics_suggestion_confidence(98);
-            ui.set_lyrics_suggestion_reason("Exact acoustic fingerprint match from audio characteristics".into());
+            ui.set_lyrics_suggestion_reason(
+                "Exact acoustic fingerprint match from audio characteristics".into(),
+            );
             let name_lyrics_suggest = format!("view-10d-lyrics-suggest-{width}");
             let f_lyrics_suggest = capture_sized(&name_lyrics_suggest, width, height, &mut report);
             audit_frame(&f_lyrics_suggest, &name_lyrics_suggest, &mut report);
@@ -982,7 +1066,8 @@ fn ui_snapshot() {
             ui.set_lyrics_has_offset(true);
             ui.set_lyrics_estimated_offset(-1.45);
             let name_lyrics_suspicious = format!("view-10e-lyrics-suspicious-{width}");
-            let f_lyrics_suspicious = capture_sized(&name_lyrics_suspicious, width, height, &mut report);
+            let f_lyrics_suspicious =
+                capture_sized(&name_lyrics_suspicious, width, height, &mut report);
             audit_frame(&f_lyrics_suspicious, &name_lyrics_suspicious, &mut report);
             ui.set_lyrics_is_suspicious(false);
             ui.set_lyrics_has_offset(false);
@@ -1002,12 +1087,18 @@ fn ui_snapshot() {
             let dir_card_h = 480.min(h.saturating_sub(72));
             let dir_cy0 = (h.saturating_sub(dir_card_h)) / 2;
             let dir_cy1 = dir_cy0 + dir_card_h;
-            f_directories.check_text_outside_container(Rect::new(dir_cx0, dir_cx1, dir_cy0, dir_cy1), 30, &format!("[{name_directories}] directories dialog card"), &mut report);
+            f_directories.check_text_outside_container(
+                Rect::new(dir_cx0, dir_cx1, dir_cy0, dir_cy1),
+                30,
+                &format!("[{name_directories}] directories dialog card"),
+                &mut report,
+            );
 
             // View 11b: Manage Directories Empty
             ui.set_settings_music_dirs(ModelRc::new(VecModel::from(Vec::<SharedString>::new())));
             let name_directories_empty = format!("view-11b-manage-directories-empty-{width}");
-            let f_directories_empty = capture_sized(&name_directories_empty, width, height, &mut report);
+            let f_directories_empty =
+                capture_sized(&name_directories_empty, width, height, &mut report);
             audit_frame(&f_directories_empty, &name_directories_empty, &mut report);
             ui.set_directories_open(false);
 
@@ -1029,7 +1120,12 @@ fn ui_snapshot() {
             let batch_card_h = 620.min(h.saturating_sub(48));
             let batch_cy0 = (h.saturating_sub(batch_card_h)) / 2;
             let batch_cy1 = batch_cy0 + batch_card_h;
-            f_batch_stage0.check_text_outside_container(Rect::new(batch_cx0, batch_cx1, batch_cy0, batch_cy1), 20, &format!("[{name_batch_stage0}] batch dialog card stage 0"), &mut report);
+            f_batch_stage0.check_text_outside_container(
+                Rect::new(batch_cx0, batch_cx1, batch_cy0, batch_cy1),
+                20,
+                &format!("[{name_batch_stage0}] batch dialog card stage 0"),
+                &mut report,
+            );
 
             // View 12b: Batch Download Dialog Stage 1
             ui.set_batch_download_stage(1);
@@ -1052,7 +1148,12 @@ fn ui_snapshot() {
             let name_batch_stage1 = format!("view-12b-batch-stage1-{width}");
             let f_batch_stage1 = capture_sized(&name_batch_stage1, width, height, &mut report);
             audit_frame(&f_batch_stage1, &name_batch_stage1, &mut report);
-            f_batch_stage1.check_text_outside_container(Rect::new(batch_cx0, batch_cx1, 0, h), 20, &format!("[{name_batch_stage1}] batch dialog card stage 1"), &mut report);
+            f_batch_stage1.check_text_outside_container(
+                Rect::new(batch_cx0, batch_cx1, 0, h),
+                20,
+                &format!("[{name_batch_stage1}] batch dialog card stage 1"),
+                &mut report,
+            );
             ui.set_batch_download_open(false);
         }
     });
@@ -1101,8 +1202,16 @@ fn check_header_tabs_centred(frame: &Frame, report: &mut Report) {
         return;
     };
 
-    let tab_width = if frame.width() < 1100 { TAB_WIDTH_SHRUNK } else { TAB_WIDTH };
-    let tab_gap = if frame.width() < 1100 { TAB_GAP_SHRUNK } else { TAB_GAP };
+    let tab_width = if frame.width() < 1100 {
+        TAB_WIDTH_SHRUNK
+    } else {
+        TAB_WIDTH
+    };
+    let tab_gap = if frame.width() < 1100 {
+        TAB_GAP_SHRUNK
+    } else {
+        TAB_GAP
+    };
     let tabs_width = TAB_COUNT * (tab_width + tab_gap) - tab_gap;
 
     // Center tabs in the remaining space between left logo and right actions
@@ -1438,13 +1547,22 @@ fn check_cover_art_is_painted(
 /// cannot see: a broken `grid-columns`/`album-rows` pairing silently drops cards
 /// off the end of a row or stacks them in one column.
 fn check_album_grid(frame: &Frame, report: &mut Report) {
+    // A cover card is at least this wide at the narrowest supported window; text
+    // runs and the floating batch pill are not, which keeps merged text bands from
+    // being mistaken for a row of artwork.
+    const MIN_CARD_W: usize = 100;
+
     // Artwork bands are the ones whose ink groups are tall (the cover art, or its
     // placeholder glyph); the name/artist/status bands are one text line each, so
     // this skips them without needing to know the card's internal spacing.
     let mut artwork_rows: Vec<Vec<Island>> = Vec::new();
     for (top, bottom) in frame.ink_bands(0, W, 120, H - PLAYER_HEIGHT) {
         let islands = frame.ink_islands(0, W, top, bottom + 1);
-        if islands.len() >= crate::ALBUM_GRID_COLUMNS && islands.iter().all(|i| i.height() >= 24) {
+        if islands.len() >= crate::ALBUM_GRID_COLUMNS
+            && islands
+                .iter()
+                .all(|i| i.height() >= 24 && i.width() >= MIN_CARD_W)
+        {
             artwork_rows.push(islands);
         }
     }
@@ -1537,27 +1655,39 @@ fn check_button_icon_is_centred(frame: &Frame, report: &mut Report, name: &str, 
 fn check_header_action_icons_are_centred(frame: &Frame, report: &mut Report) {
     if frame.width() >= 1440 {
         let buttons: Vec<Island> = frame
-            .islands(frame.width() - 450, frame.width(), 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2)
+            .islands(
+                frame.width() - 450,
+                frame.width(),
+                0,
+                HEADER_HEIGHT - 2,
+                FAINT_LUMA,
+                2,
+            )
             .into_iter()
             .filter(|island| island.width() > 60)
             .collect();
 
         report.require(
             !buttons.is_empty(),
-            &format!("[{}] no labelled header actions were painted", frame.width()),
+            format!(
+                "[{}] no labelled header actions were painted",
+                frame.width()
+            ),
         );
         for (index, button) in buttons.iter().enumerate() {
-            check_button_icon_is_centred(
-                frame,
-                report,
-                &format!("header action {index}"),
-                *button,
-            );
+            check_button_icon_is_centred(frame, report, &format!("header action {index}"), *button);
         }
     } else {
         // Below 1440px: ToolbarButtons are icon-only (34px wide)
         let buttons: Vec<Island> = frame
-            .islands(frame.width() - 160, frame.width(), 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2)
+            .islands(
+                frame.width() - 160,
+                frame.width(),
+                0,
+                HEADER_HEIGHT - 2,
+                FAINT_LUMA,
+                2,
+            )
             .into_iter()
             .filter(|island| island.width() >= 28 && island.width() <= 45)
             .collect();
@@ -1611,20 +1741,39 @@ fn check_header_regions_no_overlap(frame: &Frame, name: &str, report: &mut Repor
     let logo_right = logo_extent.1;
 
     // 2. Center nav tabs region
-    let violet = frame.violet_islands(0, w, HEADER_HEIGHT - 12, HEADER_HEIGHT);
+    //
+    // The violet-accented Download button lives in the same bottom band of the header
+    // and is wider than the tab underline, so the search has to stop at the action
+    // cluster instead of scanning the whole header (otherwise the button is picked up
+    // as "the indicator" and the tabs appear to sit next to the window edge).
+    let search_start = if w < 1440 {
+        w.saturating_sub(160)
+    } else {
+        w.saturating_sub(450)
+    };
+    let violet = frame.violet_islands(
+        logo_extent.1,
+        search_start,
+        HEADER_HEIGHT - 12,
+        HEADER_HEIGHT,
+    );
     let Some(indicator) = violet.first() else {
         // Tab indicator only exists when one of the tabs 0..5 is active
         return;
     };
-    let tab_width = if w < 1100 { TAB_WIDTH_SHRUNK } else { TAB_WIDTH };
+    let tab_width = if w < 1100 {
+        TAB_WIDTH_SHRUNK
+    } else {
+        TAB_WIDTH
+    };
     let tab_gap = if w < 1100 { TAB_GAP_SHRUNK } else { TAB_GAP };
     let tabs_width = 5.0 * tab_width + 4.0 * tab_gap;
 
-    let tabs_left = indicator.centre_x() - tab_width / 2.0 - (tab_idx as f64) * (tab_width + tab_gap);
+    let tabs_left =
+        indicator.centre_x() - tab_width / 2.0 - (tab_idx as f64) * (tab_width + tab_gap);
     let tabs_right = tabs_left + tabs_width;
 
     // 3. Right action toolbar buttons region
-    let search_start = if w < 1440 { w - 160 } else { w - 450 };
     let buttons = frame.islands(search_start, w, 0, HEADER_HEIGHT - 2, FAINT_LUMA, 2);
     report.require(
         !buttons.is_empty(),
@@ -1635,9 +1784,7 @@ fn check_header_regions_no_overlap(frame: &Frame, name: &str, report: &mut Repor
     // Assert: No overlap between adjacent regions
     report.require(
         logo_right < tabs_left as usize,
-        format!(
-            "[{name}] Left logo (x={logo_right}) overlaps with tabs (x={tabs_left:.1})"
-        ),
+        format!("[{name}] Left logo (x={logo_right}) overlaps with tabs (x={tabs_left:.1})"),
     );
     report.require(
         (tabs_right as usize) < actions_left,

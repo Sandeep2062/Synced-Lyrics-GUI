@@ -21,7 +21,6 @@
 use slint::platform::software_renderer::PremultipliedRgbaColor;
 use std::collections::HashMap;
 
-
 /// Luma at or above this counts as "ink", i.e. intentionally painted content.
 /// Low enough to catch `Theme.text-dim` (luma ~85), high enough to ignore the
 /// hover/elevated surfaces (luma <= ~36).
@@ -30,7 +29,13 @@ pub const INK_LUMA: u32 = 45;
 const ROW_MIN_PIXELS: usize = 3;
 /// Deliberately dim content, e.g. the unplayed portion of the seek waveform,
 /// which is darker than `Theme.text-dim` but still clearly painted.
-pub const FAINT_LUMA: u32 = 18;
+/// Dim content that still reads as painted foreground. Every surface in the app is
+/// darker than this — the page background sits at luma 16, the header at 26 and the
+/// list cards at 34 — so a threshold below those turns whole backgrounds into one
+/// "island" and every geometry check that measures edges silently measures the
+/// surface instead. The dimmest foreground the audits look for is the unplayed part
+/// of the waveform, at luma 46.
+pub const FAINT_LUMA: u32 = 40;
 /// Near-white content. On this theme that is reserved for emphasis — the active
 /// lyric line, for instance — so it is how the lyrics panel's current line is
 /// located without depending on a highlight box behind it.
@@ -75,7 +80,7 @@ impl Island {
         self.x1.saturating_sub(self.x0) + 1
     }
 
-    pub fn to_rect(&self) -> Rect {
+    pub fn to_rect(self) -> Rect {
         Rect::new(self.x0, self.x1 + 1, self.y0, self.y1 + 1)
     }
 }
@@ -536,12 +541,7 @@ impl Frame {
     /// Checks that text inside a container is not abruptly clipped against `container.x1`.
     /// When text is unelided and clipped by an ancestor clip rectangle, ink pixels hit the exact
     /// boundary column with high ink density across multiple rows (the vertical sliced edge of a letter).
-    pub fn check_not_clipped_at_boundary(
-        &self,
-        container: Rect,
-        label: &str,
-        report: &mut Report,
-    ) {
+    pub fn check_not_clipped_at_boundary(&self, container: Rect, label: &str, report: &mut Report) {
         report.increment_checks();
         let cx1 = container.x1;
         let cy0 = container.y0;
@@ -552,9 +552,7 @@ impl Frame {
         }
 
         let boundary_x = cx1.saturating_sub(1);
-        let boundary_ink_rows = (cy0..cy1)
-            .filter(|&y| self.ink(boundary_x, y))
-            .count();
+        let boundary_ink_rows = (cy0..cy1).filter(|&y| self.ink(boundary_x, y)).count();
 
         // A sliced vertical glyph stroke typically hits 6 or more contiguous ink pixels at the clip line
         if boundary_ink_rows >= 6 {
@@ -565,6 +563,7 @@ impl Frame {
     }
 
     /// Detects whether any painted islands along a horizontal band intersect or have a gap smaller than `min_gap`.
+    #[allow(clippy::too_many_arguments)]
     pub fn check_islands_no_overlap(
         &self,
         x0: usize,

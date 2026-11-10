@@ -13,9 +13,9 @@
 //! - Track identification & tag suggestions (`identify-track`, `accept-current-identification`, `ignore-current-identification`)
 
 use crate::art_loader::ArtLoader;
+use crate::downloads::ActiveBatchJob;
 use crate::library_model::{load_library_into_ui, open_database, AppState};
 use crate::playback::{wire_playback, RodioAudioEngine, WaveformCacheMap};
-use crate::downloads::ActiveBatchJob;
 use crate::MainWindow;
 use lyrics_core::{LrcLine, LrcWord, LyricsStatus, Track};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
@@ -46,7 +46,11 @@ fn write_test_wav(path: &Path, sample_rate: u32, channels: u16, seconds: f32) {
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&data_len.to_le_bytes());
     for frame in 0..frames {
-        let value = if (frame / 10) % 2 == 0 { 12_000i16 } else { -12_000 };
+        let value = if (frame / 10) % 2 == 0 {
+            12_000i16
+        } else {
+            -12_000
+        };
         for _ in 0..channels {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
@@ -78,6 +82,7 @@ impl TestHarness {
         crate::ui_snapshot::ensure_test_platform();
 
         let window = MainWindow::new().expect("create MainWindow");
+        #[allow(clippy::arc_with_non_send_sync)]
         let audio = Arc::new(Mutex::new(RodioAudioEngine::new()));
         let lyric_state = Arc::new(Mutex::new(Vec::<LrcLine>::new()));
         let app_state = Arc::new(Mutex::new(AppState::new()));
@@ -104,7 +109,12 @@ impl TestHarness {
             &batch_job_control,
             &lyric_state,
         );
-        crate::health_wiring::wire_health_audit(&window, &app_state, &art_loader, &health_job_control);
+        crate::health_wiring::wire_health_audit(
+            &window,
+            &app_state,
+            &art_loader,
+            &health_job_control,
+        );
         crate::library_model::wire_search_and_filters(&window, &app_state, &art_loader);
         crate::lyrics_sync::wire_lyrics_sync(
             &window,
@@ -175,8 +185,13 @@ fn test_all_headless_features() {
     eprintln!("Running test_batch_download_modal_lifecycle...");
     run_test_batch_download_modal_lifecycle();
 
-    eprintln!("Running test_coldhart_live_batch...");
-    run_test_coldhart_live_batch();
+    // Live provider traffic is opt-in: CI must stay deterministic and offline.
+    if std::env::var("SLG_LIVE").as_deref() == Ok("1") {
+        eprintln!("Running test_coldhart_live_batch...");
+        run_test_coldhart_live_batch();
+    } else {
+        eprintln!("Skipping test_coldhart_live_batch (set SLG_LIVE=1 to run)");
+    }
 
     eprintln!("Running test_health_preview_and_apply_safe_fixes...");
     run_test_health_preview_and_apply_safe_fixes();
@@ -201,6 +216,12 @@ fn test_all_headless_features() {
 
     eprintln!("Running test_view_snapshots...");
     run_test_view_snapshots();
+
+    // The visual regression gate renders into the same process-wide Slint platform,
+    // so it has to run here instead of from a `#[test]` of its own (a separate test
+    // thread cannot create a second Slint context).
+    eprintln!("Running ui_snapshot gate...");
+    crate::ui_snapshot::run_snapshot_gate();
 }
 
 fn run_test_settings_persistence() {
@@ -317,7 +338,7 @@ fn run_test_offset_adjustment_and_file_rewrite() {
         suspicious_reason: None,
         lyrics_offset_ms: 0,
     };
-    db.upsert_tracks(&[track.clone()]).unwrap();
+    db.upsert_tracks(std::slice::from_ref(&track)).unwrap();
     h.app_state.lock().unwrap().all_tracks = vec![track];
     h.app_state.lock().unwrap().filtered_tracks = vec![0];
 
@@ -328,12 +349,18 @@ fn run_test_offset_adjustment_and_file_rewrite() {
     // Adjust offset +400ms
     h.window.invoke_adjust_lyrics_offset(400);
     assert_eq!(h.window.get_lyrics_offset_ms(), 400);
-    assert_eq!(db.get_track_offset(audio_path.to_str().unwrap()).unwrap(), 400);
+    assert_eq!(
+        db.get_track_offset(audio_path.to_str().unwrap()).unwrap(),
+        400
+    );
 
     // Set offset to -150ms
     h.window.invoke_set_lyrics_offset(-150);
     assert_eq!(h.window.get_lyrics_offset_ms(), -150);
-    assert_eq!(db.get_track_offset(audio_path.to_str().unwrap()).unwrap(), -150);
+    assert_eq!(
+        db.get_track_offset(audio_path.to_str().unwrap()).unwrap(),
+        -150
+    );
 
     // Write offset tag to file
     h.window.invoke_write_lyrics_offset_to_file();
@@ -429,7 +456,11 @@ fn run_test_coldhart_live_batch() {
 
     let track = Track {
         audio_path: audio_path.to_str().unwrap().into(),
-        lrc_path: music_dir.join("Cold Hart - Anxiety.lrc").to_str().unwrap().into(),
+        lrc_path: music_dir
+            .join("Cold Hart - Anxiety.lrc")
+            .to_str()
+            .unwrap()
+            .into(),
         artist: "Cold Hart".into(),
         title: "Anxiety".into(),
         album: "anxious".into(),
@@ -440,7 +471,7 @@ fn run_test_coldhart_live_batch() {
         suspicious_reason: None,
         lyrics_offset_ms: 0,
     };
-    db.upsert_tracks(&[track.clone()]).unwrap();
+    db.upsert_tracks(std::slice::from_ref(&track)).unwrap();
     h.app_state.lock().unwrap().all_tracks = vec![track];
 
     // Start live batch download in MissingOnly mode
@@ -457,10 +488,105 @@ fn run_test_coldhart_live_batch() {
         }
     }
 
-    assert!(h.window.get_batch_is_finished(), "live batch download should finish");
+    assert!(
+        h.window.get_batch_is_finished(),
+        "live batch download should finish"
+    );
     let stats = h.window.get_batch_stats();
     assert_eq!(stats.total, 1, "Only 1 track is missing");
     assert_eq!(stats.processed, 1, "Track was processed by live providers");
+    h.window.invoke_batch_close();
+}
+
+/// Live end-to-end smoke run against a real album folder on disk.
+///
+/// Requires `SLG_ALBUM_DIR` (folder with real audio + `.lrc` files) and `SLG_LIVE=1`,
+/// because it queries live providers and writes `.lrc` files into that folder. It
+/// drives the production wiring headlessly: scan -> one Missing Only batch download.
+#[test]
+#[ignore = "needs SLG_ALBUM_DIR and SLG_LIVE=1; hits live providers and writes .lrc files"]
+fn test_real_album_scan_and_live_batch() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    let album = PathBuf::from(
+        std::env::var("SLG_ALBUM_DIR").expect("SLG_ALBUM_DIR must point at an album folder"),
+    );
+    assert!(album.is_dir(), "album dir missing: {}", album.display());
+    assert_eq!(
+        std::env::var("SLG_LIVE").as_deref(),
+        Ok("1"),
+        "set SLG_LIVE=1 to allow network access and lyric writes"
+    );
+
+    let h = TestHarness::new("real_album");
+    let db = open_database().unwrap();
+    db.add_directory(album.to_str().unwrap()).unwrap();
+
+    let scan_started = std::time::Instant::now();
+    h.window.invoke_refresh();
+    drain_until(&h.window, Duration::from_secs(180), |w| {
+        !w.get_is_refreshing() && w.get_tracks().row_count() > 0
+    });
+    let scan_ms = scan_started.elapsed().as_millis();
+    let scanned = h.window.get_tracks().row_count();
+    assert!(scanned > 0, "scan found no tracks in {}", album.display());
+    eprintln!("scan: {scanned} tracks in {scan_ms} ms");
+    eprintln!("summary: {}", h.window.get_tracks_summary());
+
+    h.window.invoke_health_re_audit();
+    drain_until(&h.window, Duration::from_secs(30), |w| {
+        !w.get_health_is_running()
+    });
+    eprintln!(
+        "audit: synced={} plain={} missing={} suspicious={}",
+        h.window.get_health_synced_count(),
+        h.window.get_health_plain_count(),
+        h.window.get_health_missing_count(),
+        h.window.get_health_suspicious_count()
+    );
+    crate::ui_snapshot::save_frame_png("real-album-tracks-1280", 1280, 820);
+
+    let lrc_before = std::fs::read_dir(&album)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "lrc"))
+        .count();
+
+    h.window.invoke_download_all();
+    assert!(h.window.get_batch_download_open());
+    let to_download = h.window.get_batch_missing_count();
+    eprintln!(
+        "batch: missing={to_download} of {}",
+        h.window.get_batch_total_count()
+    );
+    h.window.invoke_batch_start_mode(1); // Missing Only
+
+    let batch_started = std::time::Instant::now();
+    drain_until(&h.window, Duration::from_secs(600), |w| {
+        w.get_batch_is_finished()
+    });
+    let batch_secs = batch_started.elapsed().as_secs_f64();
+    assert!(
+        h.window.get_batch_is_finished(),
+        "live batch should finish within 600s"
+    );
+    let stats = h.window.get_batch_stats();
+    let lrc_after = std::fs::read_dir(&album)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "lrc"))
+        .count();
+    eprintln!(
+        "batch done in {batch_secs:.1}s: total={} processed={} remaining={} synced={} plain={} not_found={} errors={}",
+        stats.total, stats.processed, stats.remaining, stats.synced, stats.plain, stats.not_found, stats.errors
+    );
+    eprintln!("lrc files: {lrc_before} -> {lrc_after}");
+    for entry in h.window.get_batch_logs().iter() {
+        eprintln!(
+            "log [{}] {} - {}: {} ({})",
+            entry.timestamp, entry.track_artist, entry.track_title, entry.details, entry.badge_type
+        );
+    }
+    crate::ui_snapshot::save_frame_png("real-album-batch-1280", 1280, 820);
     h.window.invoke_batch_close();
 }
 
@@ -492,7 +618,7 @@ fn run_test_health_preview_and_apply_safe_fixes() {
         lyrics_offset_ms: 0,
     };
     let db = open_database().unwrap();
-    db.upsert_tracks(&[track.clone()]).unwrap();
+    db.upsert_tracks(std::slice::from_ref(&track)).unwrap();
     h.app_state.lock().unwrap().all_tracks = vec![track];
 
     // Re-audit
@@ -519,7 +645,9 @@ fn run_test_health_preview_and_apply_safe_fixes() {
     assert!(bak_path.exists(), "backup .bak file should exist");
     let fixed_lrc = std::fs::read_to_string(&lrc_path).unwrap();
     assert!(
-        fixed_lrc.contains("[offset: 500]") || fixed_lrc.contains("[offset:500]") || fixed_lrc.contains("[00:01.50]"),
+        fixed_lrc.contains("[offset: 500]")
+            || fixed_lrc.contains("[offset:500]")
+            || fixed_lrc.contains("[00:01.50]"),
         "lrc should be fixed: {fixed_lrc}"
     );
 }
@@ -546,7 +674,7 @@ fn run_test_track_identification_accept_and_ignore() {
         lyrics_offset_ms: 0,
     };
     let db = open_database().unwrap();
-    db.upsert_tracks(&[track.clone()]).unwrap();
+    db.upsert_tracks(std::slice::from_ref(&track)).unwrap();
     h.app_state.lock().unwrap().all_tracks = vec![track];
     h.app_state.lock().unwrap().filtered_tracks = vec![0];
     h.app_state.lock().unwrap().current_filtered_row = Some(0);
@@ -606,16 +734,30 @@ fn run_test_playback_transport_seek_volume() {
 
     // 2. Lyrics seek & Click-to-seek
     let lines = vec![
-        LrcLine { timestamp_seconds: 1.0, text: "Line 1".into(), words: vec![] },
+        LrcLine {
+            timestamp_seconds: 1.0,
+            text: "Line 1".into(),
+            words: vec![],
+        },
         LrcLine {
             timestamp_seconds: 3.0,
             text: "Hello World".into(),
             words: vec![
-                LrcWord { text: "Hello".into(), timestamp_seconds: 3.0 },
-                LrcWord { text: "World".into(), timestamp_seconds: 4.0 },
+                LrcWord {
+                    text: "Hello".into(),
+                    timestamp_seconds: 3.0,
+                },
+                LrcWord {
+                    text: "World".into(),
+                    timestamp_seconds: 4.0,
+                },
             ],
         },
-        LrcLine { timestamp_seconds: 5.0, text: "Line 3".into(), words: vec![] },
+        LrcLine {
+            timestamp_seconds: 5.0,
+            text: "Line 3".into(),
+            words: vec![],
+        },
     ];
     *h.lyric_state.lock().unwrap() = lines;
     h.audio.lock().unwrap().duration = Some(10.0);
@@ -713,7 +855,8 @@ fn run_test_queue_play_track() {
 
     let ui_t1 = crate::track_to_ui(&t1, None);
     let ui_t2 = crate::track_to_ui(&t2, None);
-    h.window.set_queue_tracks(ModelRc::new(VecModel::from(vec![ui_t1, ui_t2])));
+    h.window
+        .set_queue_tracks(ModelRc::new(VecModel::from(vec![ui_t1, ui_t2])));
 
     h.window.invoke_play_queue_track(1);
     crate::ui_snapshot::settle(50);
@@ -814,50 +957,82 @@ fn run_test_keyboard_shortcuts() {
     assert!(!h.window.get_is_muted());
 
     // 'f' toggles now-playing (fullscreen)
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "f".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "f".into() });
     assert!(h.window.get_now_playing_visible());
 
     // Escape exits now-playing
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: slint::platform::Key::Escape.into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
     assert!(!h.window.get_now_playing_visible());
 
     // 'm' toggles mute
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "m".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "m".into() });
     assert!(h.window.get_is_muted());
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "m".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "m".into() });
     assert!(!h.window.get_is_muted());
 
     // 'p' toggles mini player
     assert!(!h.window.get_mini_player_mode());
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "p".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "p".into() });
     assert!(h.window.get_mini_player_mode());
     // Escape exits mini player
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: slint::platform::Key::Escape.into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
     assert!(!h.window.get_mini_player_mode());
 
     // 'l' toggles lyrics panel
     assert!(!h.window.get_lyrics_visible());
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "l".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "l".into() });
     assert!(h.window.get_lyrics_visible());
 
     // 'q' toggles queue and closes lyrics
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "q".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "q".into() });
     assert!(h.window.get_queue_visible());
     assert!(!h.window.get_lyrics_visible());
 
     // Escape closes queue
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: slint::platform::Key::Escape.into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
     assert!(!h.window.get_queue_visible());
 
     // Offset shortcuts when lyrics panel is open
     h.window.set_lyrics_visible(true);
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "]".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "]".into() });
     assert_eq!(h.window.get_lyrics_offset_ms(), 100);
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "}".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "}".into() });
     assert_eq!(h.window.get_lyrics_offset_ms(), 600);
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "[".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "[".into() });
     assert_eq!(h.window.get_lyrics_offset_ms(), 500);
-    h.window.window().dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "0".into() });
+    h.window
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: "0".into() });
     assert_eq!(h.window.get_lyrics_offset_ms(), 0);
 }
 
@@ -865,14 +1040,17 @@ fn run_test_view_snapshots() {
     let h = TestHarness::new("view_snapshots");
     h.window.set_has_track(true);
     h.window.set_track_title("Cruel Angel's Thesis".into());
-    h.window.set_track_subtitle("Yoko Takahashi - Evangelion".into());
+    h.window
+        .set_track_subtitle("Yoko Takahashi - Evangelion".into());
     h.window.set_duration_text("4:05".into());
     h.window.set_position_text("1:24".into());
     h.window.set_seek_position(0.34);
     h.window.set_volume(0.75);
     h.window.set_is_muted(false);
 
-    h.window.set_lyrics_lines(ModelRc::new(VecModel::from(crate::ui_snapshot::worst_case_lyrics())));
+    h.window.set_lyrics_lines(ModelRc::new(VecModel::from(
+        crate::ui_snapshot::worst_case_lyrics(),
+    )));
     h.window.set_has_lyrics(true);
     h.window.set_lyrics_status("synced".into());
     h.window.set_active_line_index(2);
@@ -885,7 +1063,8 @@ fn run_test_view_snapshots() {
             0.15 + 0.7 * (x * std::f32::consts::PI * 4.0).sin().abs()
         })
         .collect();
-    h.window.set_waveform_data(ModelRc::new(VecModel::from(bars)));
+    h.window
+        .set_waveform_data(ModelRc::new(VecModel::from(bars)));
 
     // View 1: Now Playing Fullscreen with Synced Lyrics
     h.window.set_now_playing_visible(true);
@@ -896,7 +1075,9 @@ fn run_test_view_snapshots() {
     h.window.set_now_playing_visible(false);
 
     // Setup queue
-    h.window.set_queue_tracks(ModelRc::new(VecModel::from(crate::ui_snapshot::worst_case_tracks(5))));
+    h.window.set_queue_tracks(ModelRc::new(VecModel::from(
+        crate::ui_snapshot::worst_case_tracks(5),
+    )));
     h.window.set_current_queue_index(0);
 
     // View 2: Queue Drawer
