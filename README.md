@@ -48,7 +48,7 @@
 <a id="features"></a>
 ## ✨ Features
 
-- 🖤 **Pure-Black Modern UI**: Native desktop GUI built using [Slint](https://slint.dev/) with a clean, high-contrast dark theme inspired by LRCGET. Fluid 60fps performance, zero webview, zero electron bloat, and minimal memory footprint (<50MB RAM idle).
+- 🖤 **Pure-Black Modern UI**: Native desktop GUI built using [Slint](https://slint.dev/) with a clean, high-contrast dark theme inspired by LRCGET. Fluid 60fps performance, zero webview, zero electron bloat, and a small memory footprint: **~71 MB private / ~126 MB working set when idle** (measured on Windows with a 10-track library, flat over 50 s of idle time; CPU stays under 1 % of a single core).
 - 🎤 **Karaoke Player & Lyrics Viewer**:
   - Built-in native audio engine powered by [Rodio](https://github.com/RustAudio/rodio) and [Symphonia](https://github.com/pdeljanov/Symphonia).
   - Smooth auto-scrolling lyrics with cubic-bezier easing, active line highlighting, word-level karaoke transitions, and click-to-seek playback.
@@ -264,14 +264,26 @@ SLINT_BACKEND=software cargo run -p lyrics-desktop
 The project includes an extensive test suite covering unit tests, metadata parsing, LRC formatting, provider responses, and headless UI snapshot audits:
 
 ```bash
-# Run all workspace unit tests
+# Run all workspace unit tests (includes the headless UI + snapshot gate)
 cargo test --workspace
 
-# Run headless UI snapshot regression test
-cargo test -p lyrics-desktop ui_snapshot -- --nocapture
+# Show the per-screen log and the snapshot PNGs written to target/ui-snapshots/
+cargo test -p lyrics-desktop test_all_headless_features -- --nocapture
 ```
 
-The UI snapshot harness uses Slint's software renderer to capture pixel-perfect PNG snapshots into `target/ui-snapshots/` and verifies that no unthemed widgets or misaligned elements appear.
+The UI snapshot harness uses Slint's software renderer to capture pixel-perfect PNG snapshots into `target/ui-snapshots/` and verifies that no unthemed widgets or misaligned elements appear. It renders into an in-memory `MinimalSoftwareWindow`, so it needs neither a display server nor a GPU.
+
+Slint allows only one platform per process, bound to the thread that created it, so every window-creating test lives in `test_all_headless_features`; a second `#[test]` cannot open its own window.
+
+Live provider traffic is opt-in so CI stays deterministic and offline:
+
+```bash
+# Replay a real album folder end to end: scan -> Missing Only batch download
+SLG_LIVE=1 SLG_ALBUM_DIR="/path/to/album" \
+  cargo test -p lyrics-desktop test_real_album_scan_and_live_batch -- --ignored --nocapture
+```
+
+`test_real_album_scan_and_live_batch` and the `test_coldhart_live_batch` step inside the headless suite only run when `SLG_LIVE=1` is set; both query real providers and write `.lrc` files into the album folder you point them at.
 
 ---
 
@@ -390,7 +402,7 @@ Then navigate to [GitHub Pull Requests](https://github.com/Sandeep2062/Synced-Ly
 <a id="releases"></a>
 ## 🏷️ Installers & Pre-Built Binaries
 
-Pushing a version tag (`git tag v1.0.0 && git push origin v1.0.0`) triggers automated multi-platform GitHub Actions workflows that publish release assets for Windows, macOS, and Linux:
+Pushing a version tag (`git tag v1.2.0 && git push origin v1.2.0`) triggers automated multi-platform GitHub Actions workflows that publish release assets for Windows, macOS, and Linux:
 
 | Platform | Installer | Portable Package | Description |
 | :--- | :--- | :--- | :--- |

@@ -13,6 +13,15 @@
 AppId={{4E32B099-B08F-4DFA-A3BA-5C320A8610EF}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+; Windows file properties shown by Explorer / SmartScreen. Keep these driven by
+; MyAppVersion so the installer never advertises a stale version number.
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoProductName={#MyAppName}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Installer
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
