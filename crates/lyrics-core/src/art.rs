@@ -631,6 +631,17 @@ mod tests {
         0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
 
+    /// The folder-art memo is process-global, so the tests that clear it must not
+    /// run while another one is asserting on what it remembered. Without this the
+    /// cached-thumbnail identity check fails intermittently under `cargo test`.
+    static FOLDER_CACHE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_folder_cache() -> std::sync::MutexGuard<'static, ()> {
+        FOLDER_CACHE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "synced-lyrics-art-{tag}-{}",
@@ -645,6 +656,7 @@ mod tests {
 
     #[test]
     fn a_cover_next_to_the_audio_is_used_when_the_tags_have_none() {
+        let _guard = lock_folder_cache();
         let dir = scratch_dir("folder");
         fs::write(dir.join("Song.mp3"), []).unwrap();
         // Neither of these is the front cover and neither may be picked up.
@@ -749,6 +761,7 @@ mod tests {
     /// is remembered until a scan clears the folder cache.
     #[test]
     fn a_folder_cover_is_decoded_once_and_remembered() {
+        let _guard = lock_folder_cache();
         let dir = scratch_dir("shared-cover");
         fs::write(dir.join("01.mp3"), []).unwrap();
         fs::write(dir.join("02.mp3"), []).unwrap();
@@ -773,6 +786,7 @@ mod tests {
     /// track remembered as "no artwork" stays blank for good.
     #[test]
     fn a_cover_appearing_beside_the_audio_changes_the_index_stamp() {
+        let _guard = lock_folder_cache();
         let dir = scratch_dir("stamp");
         let track = dir.join("Song.mp3");
         fs::write(&track, []).unwrap();

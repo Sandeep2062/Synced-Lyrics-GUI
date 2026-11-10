@@ -52,18 +52,41 @@ pub(crate) fn providers_for_settings(
     track: &Track,
     settings: &AppSettings,
 ) -> Result<Vec<Box<dyn LyricsProvider>>, String> {
+    providers_for_settings_with_cache(database, track, settings, true)
+}
+
+/// Builds the provider chain for one track.
+///
+/// Providers that answered for this track within `retry_days` are served from the
+/// lyrics cache so batch runs do not re-query them. A user asking to *replace* the
+/// lyrics wants a fresh answer, so that path passes `allow_cache = false`: with the
+/// cache enabled the `CachedLyricsProvider` replays the lyrics already on disk under
+/// the track's own metadata, which always scores a perfect match and makes
+/// "Replace lyrics" a no-op.
+pub(crate) fn providers_for_settings_with_cache(
+    database: &LibraryDb,
+    track: &Track,
+    settings: &AppSettings,
+    allow_cache: bool,
+) -> Result<Vec<Box<dyn LyricsProvider>>, String> {
     let mut providers: Vec<Box<dyn LyricsProvider>> = Vec::new();
-    let ttl_seconds = match settings.retry_days {
-        0 => 0_u64,
-        d => d as u64 * 86400,
+    let ttl_seconds = if allow_cache {
+        match settings.retry_days {
+            0 => 0_u64,
+            d => d as u64 * 86400,
+        }
+    } else {
+        0
     };
 
     macro_rules! add_provider {
         ($enabled:expr, $name:expr, $cached_name:expr, $ctor:expr) => {
             if $enabled {
-                if let Some(lyrics) = database
-                    .cached_lyrics(&track.audio_path, $cached_name)
+                if let Some(lyrics) = allow_cache
+                    .then(|| database.cached_lyrics(&track.audio_path, $cached_name))
+                    .transpose()
                     .map_err(|e| e.to_string())?
+                    .flatten()
                 {
                     providers.push(Box::new(CachedLyricsProvider { lyrics }));
                 } else {
@@ -209,7 +232,10 @@ fn download_single_batch_track(
         Option<bool>,
         Option<String>,
     )>::new()));
-    let outcome_res = match providers_for_settings(db, track, settings) {
+    // "Replace All" is the user explicitly asking for new lyrics, so it must not be
+    // answered from the cache the earlier attempt populated.
+    let allow_cache = mode != DownloadMode::ReplaceAll;
+    let outcome_res = match providers_for_settings_with_cache(db, track, settings, allow_cache) {
         Ok(providers) => {
             let pr_cb = Arc::clone(&provider_results);
             download_track(track, mode, &providers, cancelled, move |event| {
@@ -908,7 +934,8 @@ pub(crate) fn wire_single_track_downloads(
                 let _ = (|| -> Result<(), String> {
                     let db = open_database()?;
                     let settings = load_settings().map_err(|e| e.to_string())?;
-                    let providers = providers_for_settings(&db, &track, &settings)?;
+                    let providers =
+                        providers_for_settings_with_cache(&db, &track, &settings, false)?;
                     let cancelled = AtomicBool::new(false);
                     let outcome = download_track(
                         &track,

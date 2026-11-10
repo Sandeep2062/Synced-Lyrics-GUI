@@ -51,7 +51,7 @@ impl LyricsProvider for NeteaseProvider {
     }
 
     fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
-        let query = format!("{} {}", track.title, track.artist);
+        let query = format!("{} {}", track.search_title(), track.search_artist());
         let response = self
             .client
             .get(&self.search_url)

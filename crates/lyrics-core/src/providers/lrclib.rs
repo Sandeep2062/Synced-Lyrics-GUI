@@ -62,9 +62,10 @@ impl LyricsProvider for LrclibProvider {
 
     fn search(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         // Step 1: Try /api/get with duration first
+        let (title, artist) = (track.search_title(), track.search_artist());
         let mut get_params = vec![
-            ("track_name", track.title.as_str()),
-            ("artist_name", track.artist.as_str()),
+            ("track_name", title.as_str()),
+            ("artist_name", artist.as_str()),
         ];
         let duration_str;
         if let Some(dur) = track.duration_seconds {
@@ -112,12 +113,13 @@ impl LyricsProvider for LrclibProvider {
 impl LrclibProvider {
     fn execute_search(&self, track: &Track, use_q: bool) -> Result<Vec<Candidate>, ProviderError> {
         let req = if use_q || track.title.trim().is_empty() || track.artist.trim().is_empty() {
-            let q = format!("{} {}", track.title, track.artist);
+            let q = format!("{} {}", track.search_title(), track.search_artist());
             self.client.get(&self.search_url).query(&[("q", q.trim())])
         } else {
+            let (title, artist) = (track.search_title(), track.search_artist());
             let mut search_params = vec![
-                ("track_name", track.title.as_str()),
-                ("artist_name", track.artist.as_str()),
+                ("track_name", title.as_str()),
+                ("artist_name", artist.as_str()),
             ];
             if !track.album.trim().is_empty() {
                 search_params.push(("album_name", track.album.as_str()));

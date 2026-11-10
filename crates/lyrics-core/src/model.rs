@@ -38,6 +38,33 @@ impl Track {
         &self.title
     }
 
+    /// Title as it should be sent to a search engine.
+    ///
+    /// Library filenames and tags carry production notes and features
+    /// ("Anxiety [Prod By iLL instrumentals]", "Song (Remastered)"). Those words
+    /// actively poison provider search — Genius returns no song hit for the raw
+    /// title but finds the track for "Anxiety" — so queries use the cleaned form
+    /// and fall back to the raw title when cleaning removes everything.
+    pub fn search_title(&self) -> String {
+        let cleaned = crate::matching::clean_title(&self.title);
+        if cleaned.trim().is_empty() {
+            self.title.clone()
+        } else {
+            cleaned
+        }
+    }
+
+    /// Artist as it should be sent to a search engine (same reasoning as
+    /// [`Track::search_title`]).
+    pub fn search_artist(&self) -> String {
+        let cleaned = crate::matching::clean_title(&self.artist);
+        if cleaned.trim().is_empty() {
+            self.artist.clone()
+        } else {
+            cleaned
+        }
+    }
+
     pub fn should_download(&self, mode: DownloadMode) -> bool {
         match mode {
             DownloadMode::MissingOnly => self.status == LyricsStatus::Missing,

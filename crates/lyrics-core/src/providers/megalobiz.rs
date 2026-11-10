@@ -69,7 +69,7 @@ impl LyricsProvider for MegalobizProvider {
                 req = req.query(&[("duration", dur.as_str())]);
             }
         } else {
-            let q = format!("{} {}", track.artist, track.title);
+            let q = format!("{} {}", track.search_artist(), track.search_title());
             req = req.query(&[("q", q.trim())]);
             if let Some(dur) = &duration_str {
                 req = req.query(&[("duration", dur.as_str())]);

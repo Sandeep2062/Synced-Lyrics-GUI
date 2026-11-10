@@ -56,7 +56,7 @@ impl GeniusProvider {
     }
 
     fn search_public(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
-        let query = format!("{} {}", track.title, track.artist);
+        let query = format!("{} {}", track.search_title(), track.search_artist());
         let response = self
             .client
             .get(PUBLIC_SEARCH_URL)
@@ -119,7 +119,7 @@ impl GeniusProvider {
     }
 
     fn search_with_token(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
-        let query = format!("{} {}", track.title, track.artist);
+        let query = format!("{} {}", track.search_title(), track.search_artist());
         let response = self
             .client
             .get(API_URL)

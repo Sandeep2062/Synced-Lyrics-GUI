@@ -114,7 +114,7 @@ impl MusixmatchProvider {
     fn search_builtin(&self, track: &Track) -> Result<Vec<Candidate>, ProviderError> {
         let token = self.get_user_token()?;
         let now_str = Self::current_time_ms().to_string();
-        let query_str = format!("{} {}", track.title, track.artist);
+        let query_str = format!("{} {}", track.search_title(), track.search_artist());
 
         // Step 1: Search track
         let search_url = format!("{DESKTOP_API_URL}/track.search");

@@ -448,6 +448,40 @@ pub fn score_duration(track_dur: Option<f64>, cand_dur: Option<f64>) -> (f64, bo
 /// - Evaluates title, artist, album, and duration.
 /// - Handles swapped Artist - Title order seamlessly.
 /// - Evaluates duration full score within 2s, decaying to 0 at ~10s, only when both are known.
+/// Minimum artist similarity for a candidate to be treated as the same recording.
+///
+/// Character-level metrics score two unrelated names surprisingly high — "Cold Hart"
+/// against "Frank Carter & The Rattlesnakes" lands around 0.55 — so a strong title
+/// match alone is not evidence that the lyrics belong to this track.
+pub const ARTIST_MATCH_FLOOR: f64 = 0.62;
+
+/// Tokens too common to prove anything about the artist ("the", "feat", …).
+const ARTIST_STOPWORD_LEN: usize = 4;
+
+/// Whether a candidate's artist plausibly names the same act as the track.
+///
+/// A missing artist on either side is treated as "cannot disprove" instead of "no
+/// match", because several providers only fill the artist from the page title.
+pub fn artist_matches(track_artist: &str, candidate_artist: &str) -> bool {
+    let left = normalize_title(&clean_title(track_artist));
+    let right = normalize_title(&clean_title(candidate_artist));
+    if left.is_empty() || right.is_empty() {
+        return true;
+    }
+    if left == right || left.contains(&right) || right.contains(&left) {
+        return true;
+    }
+    let shares_token = |a: &str, b: &str| {
+        a.split(' ')
+            .filter(|token| token.len() >= ARTIST_STOPWORD_LEN)
+            .any(|token| b.split(' ').any(|other| other == token))
+    };
+    if shares_token(&left, &right) || shares_token(&right, &left) {
+        return true;
+    }
+    similarity(track_artist, candidate_artist) >= ARTIST_MATCH_FLOOR
+}
+
 pub fn score_candidate(track: &Track, cand: &Candidate) -> MatchScore {
     let direct_title = similarity(&track.title, &cand.title);
     let direct_artist = similarity(&track.artist, &cand.artist);
@@ -712,6 +746,53 @@ mod tests {
             let cleaned = clean_title(input);
             assert_eq!(cleaned, expected, "Failed cleaning input: {input}");
         }
+    }
+
+    #[test]
+    fn test_artist_gate_rejects_a_different_act_with_the_same_song_title() {
+        // The real download of "Anxiety [Prod By iLL instrumentals]" by Cold Hart was
+        // answered with Frank Carter & The Rattlesnakes' "Anxiety": the title matched
+        // perfectly, the artist similarity was mid-range, and the composite score
+        // cleared the 0.75 threshold. A title alone must not be enough.
+        assert!(!artist_matches(
+            "Cold Hart",
+            "Frank Carter & The Rattlesnakes"
+        ));
+
+        // Same act, different spelling/casing/spacing.
+        assert!(artist_matches("Cold Hart", "coldhart"));
+        assert!(artist_matches("Cold Hart", "Cold Hart"));
+        assert!(artist_matches("Cold Hart", "Cold Hart & Wicca Phase"));
+        assert!(artist_matches("Beyoncé", "Beyonce"));
+        assert!(artist_matches("Guns N' Roses", "Guns N Roses"));
+
+        // Unknown artists cannot be disproved, so they are not rejected here.
+        assert!(artist_matches("Cold Hart", ""));
+        assert!(artist_matches("", "Anyone"));
+    }
+
+    #[test]
+    fn search_title_strips_production_noise_but_keeps_a_usable_title() {
+        let mut track = Track {
+            audio_path: String::new(),
+            lrc_path: String::new(),
+            artist: "Cold Hart".to_string(),
+            title: "Anxiety [Prod By iLL instrumentals]".to_string(),
+            album: String::new(),
+            duration_seconds: None,
+            status: LyricsStatus::Missing,
+            mtime: None,
+            last_checked: None,
+            suspicious_reason: None,
+            lyrics_offset_ms: 0,
+        };
+        assert_eq!(track.search_title(), "Anxiety");
+        assert_eq!(track.search_artist(), "Cold Hart");
+
+        // A title that is nothing but noise keeps its raw form rather than
+        // searching for an empty string.
+        track.title = "[Prod By Greaf]".to_string();
+        assert_eq!(track.search_title(), "[Prod By Greaf]");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::fs::{write_atomic_with_backup, FileStoreError};
 use crate::lrc::{audit_lrc, is_synced, parse_lines, parse_timestamps, LrcIssue, LrcLine};
-use crate::matching::{score_candidate, similarity, Candidate};
+use crate::matching::{artist_matches, score_candidate, similarity, Candidate};
 use crate::model::{DownloadMode, Track};
 use crate::providers::{LyricsProvider, ProviderError, ProviderName};
 use crate::rate_limiter::{sleep_cancellable, AdaptiveRateLimiter, RateLimitConfig};
@@ -309,13 +309,18 @@ pub fn download_track_with_options(
         return Ok(DownloadOutcome::NotFound);
     }
 
-    // 3. Drop any candidates below match threshold
+    // 3. Drop candidates that are below the match threshold, come from a different
+    //    artist, or carry time-synced lyrics our own audit rejects (e.g. timestamps
+    //    past the end of the audio). Writing those would mean shipping lyrics the
+    //    Health view immediately flags as wrong.
     let passing_candidates: Vec<Candidate> = raw_candidates
         .into_iter()
         .filter(|cand| {
             let score = score_candidate(track, cand);
             score.total >= options.match_threshold
         })
+        .filter(|cand| artist_matches(&track.artist, &cand.artist))
+        .filter(|cand| !is_rejected_synced_lyrics(track, cand))
         .collect();
 
     if passing_candidates.is_empty() {
@@ -694,6 +699,18 @@ pub fn evaluate_and_rank_candidates(
     scored
 }
 
+/// Whether a candidate must never be written: time-synced lyrics that our own audit
+/// says belong to a different song or run past the end of the audio file.
+fn is_rejected_synced_lyrics(track: &Track, candidate: &Candidate) -> bool {
+    let Some(ref synced) = candidate.synced else {
+        return false;
+    };
+    audit_lrc(synced, track.duration_seconds, &track.title, &[])
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, LrcIssue::TooLong | LrcIssue::WrongSong))
+}
+
 fn score_existing_lyrics(track: &Track) -> Option<f64> {
     let path = std::path::Path::new(&track.lrc_path);
     if !path.exists() {
@@ -867,6 +884,84 @@ mod tests {
             .iter()
             .any(|event| matches!(event, DownloadEvent::Selected { .. })));
         let _ = std::fs::remove_file(target.lrc_path);
+    }
+
+    #[test]
+    fn rejects_a_strong_title_match_from_a_different_artist() {
+        let root =
+            std::env::temp_dir().join(format!("synced-lyrics-wrong-artist-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        let mut target = track(root.to_str().unwrap());
+        target.title = "Anxiety [Prod By iLL instrumentals]".to_string();
+        target.artist = "Cold Hart".to_string();
+        // A different act's song with the same title: perfect title, mid-range artist.
+        let providers: Vec<Box<dyn LyricsProvider>> = vec![Box::new(FakeProvider {
+            provider: ProviderName::Megalobiz,
+            result: Ok(vec![Candidate {
+                title: "Anxiety".to_string(),
+                artist: "Frank Carter & The Rattlesnakes".to_string(),
+                album: None,
+                duration_seconds: None,
+                synced: Some("[00:20.91]I don't know who I am".to_string()),
+                plain: None,
+                provider: ProviderName::Megalobiz,
+            }]),
+        })];
+
+        let outcome = download_track(
+            &target,
+            DownloadMode::MissingOnly,
+            &providers,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+
+        assert_eq!(outcome, DownloadOutcome::NotFound);
+        assert!(
+            !std::path::Path::new(&target.lrc_path).exists(),
+            "lyrics from another artist must not be written"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_synced_lyrics_that_run_past_the_end_of_the_audio() {
+        let root =
+            std::env::temp_dir().join(format!("synced-lyrics-too-long-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        let target = track(root.to_str().unwrap());
+        // The audited track is 200s long; this candidate keeps singing well past it.
+        let providers: Vec<Box<dyn LyricsProvider>> = vec![Box::new(FakeProvider {
+            provider: ProviderName::Megalobiz,
+            result: Ok(vec![Candidate {
+                title: "Song".to_string(),
+                artist: "Artist".to_string(),
+                album: None,
+                duration_seconds: None,
+                synced: Some(
+                    "[00:01.00]first line
+[00:02.00]second line
+[09:00.00]still going"
+                        .to_string(),
+                ),
+                plain: None,
+                provider: ProviderName::Megalobiz,
+            }]),
+        })];
+
+        let outcome = download_track(
+            &target,
+            DownloadMode::MissingOnly,
+            &providers,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+
+        assert_eq!(outcome, DownloadOutcome::NotFound);
+        assert!(!std::path::Path::new(&target.lrc_path).exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
